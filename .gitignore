@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pkl
+*.xlsx
+*.docx
+*.zip
+*.txt
+.env
+mysql_data/
+.claude/
