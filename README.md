@@ -35,3 +35,6 @@ liangke_daily/
 ## 更新日志
 
 - 2026-05-21: 修复 `extract_original_date` 优先级，移除 fallback 到量科网日期的逻辑
+- 2026-05-21: 新增 `export_daily.py`，支持 MySQL 数据库导出 Excel
+- 2026-05-21: 完成 2026-05-21 当日抓取（5 条新入库，11 条更新，45 条跳过）
+- 2026-05-21: 导出当日数据库为 `daily_export.xlsx`（69 条记录）
