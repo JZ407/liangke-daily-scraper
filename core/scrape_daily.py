@@ -18,7 +18,7 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 COOKIE_PATH = os.path.join(BASE_DIR, '..', 'data', 'cookies', 'qtc_cookies.pkl')
 BASE_URL = 'http://www.qtc.com.cn'
 
-# 自动标签关键词库
+# 原有技术标签关键词库
 KEYWORDS = {
     '量子计算': ['量子计算', '量子比特', 'qubit', '量子门', '量子电路', '量子算法', '量子优势', '量子霸权', '量子纠错', '逻辑量子比特', '物理量子比特', '量子体积', '量子模拟', '量子机器学习', '变分量子算法', 'vqa', 'vqe', '量子退火', '量子编译', 'nisq', 'ftqc', '容错量子计算', '量子噪声', '量子相干'],
     '量子通信': ['量子通信', '量子密钥分发', 'qkd', '量子隐形传态', '量子纠缠', '量子中继器', '量子网络', '量子互联网', '量子卫星', '自由空间量子通信', '光纤量子通信', '设备无关', 'di-qkd', 'mdi-qkd', '连续变量', 'cv-qkd'],
@@ -49,13 +49,82 @@ SPECIFIC_TAGS = {
     'AI/ML': ['机器学习', '人工智能', 'ai', 'ml-'],
 }
 
+# 五大分类标签关键词库（每篇文章必须有且仅有一个）
+# 优先级：资本运作 > 产品动态 > 企业资讯 > 科技前沿 > 宏观态势
+CATEGORY_KEYWORDS = {
+    '资本运作': [
+        '融资', '投资', '风投', 'vc ', 'pe ', 'ipo', '上市', '招股',
+        '估值', '亿美元', '万美元', '人民币', '千万', '百万', '亿元',
+        '收购', '并购', '合并', '分拆', '剥离', '整合',
+        '资助', '拨款', '补贴', '基金', '预算', '经费',
+        '营收', '收入', '利润', '亏损', '财报', '业绩', '增长',
+        '股权', '股东', '控股', '参股', '注资', '增资', '扩股',
+        'a轮', 'b轮', 'c轮', 'd轮', '种子轮', '天使轮', '战略融资',
+    ],
+    '产品动态': [
+        '产品', '发布', '推出', '上市', '芯片', '处理器', '计算机',
+        '量子计算机', '量子芯片', '量子处理器', '原型机', '样机',
+        '系统', '平台', '软件', '工具', 'sdk', 'api', '云服务',
+        '升级', '迭代', '性能', '指标', '保真度', '相干时间',
+        '低温', '制冷机', '测控', '封装', '互联', '模块化',
+        '量产', '商用', '部署', '交付', '生产线', '制造',
+    ],
+    '企业资讯': [
+        'ibm', 'google', '谷歌', '微软', 'microsoft', '亚马逊', 'amazon',
+        '英伟达', 'nvidia', '英特尔', 'intel', '苹果', 'apple',
+        'ionq', 'rigetti', 'xanadu', 'pasqal', 'd-wave', 'quera', 'quantinuum',
+        '国盾量子', '本源量子', '国仪量子', '国创中心', '中电科', '华为',
+        '合作', '协议', '签约', '伙伴', '联盟', '成员',
+        '任命', '高管', 'ceo', 'cto', '总裁', '创始人', '团队', '离职',
+        '扩建', '新厂', '研发中心', '总部', '分部', '办事处',
+    ],
+    '科技前沿': [
+        '论文', '研究', '突破', '实验', '发现', '理论', '算法', '模型',
+        '量子比特', '量子门', '量子电路', '量子纠缠', '量子叠加',
+        '量子纠错', '逻辑量子比特', '物理量子比特', '量子体积',
+        '超导', '离子阱', '光量子', '中性原子', '硅自旋', '拓扑',
+        '量子模拟', '量子机器学习', '变分量子', 'vqa', 'vqe',
+        'arxiv', 'nature', 'science', '物理评论', 'prl',
+        '预印本', '实验验证', '原理验证', '科学', '学术', '期刊',
+    ],
+    '宏观态势': [
+        '政策', '战略', '规划', '法规', '标准', '出口管制', '制裁', '法案',
+        '人才', '教育', '培训', '科研', '产学研',
+        '市场', '产业', '生态', '趋势', '报告', '预测', '全球', '国际',
+        '国家量子', '量子计划', '路线图', '白皮书', '指南', '倡议',
+        '竞争', '领先', '差距', '挑战', '机遇', '风险',
+    ],
+}
+
+CATEGORY_PRIORITY = ['资本运作', '产品动态', '企业资讯', '科技前沿', '宏观态势']
+
+
+def _match_category(text_lower: str) -> str:
+    """匹配五大分类标签，返回唯一分类。"""
+    scores = {}
+    for tag, words in CATEGORY_KEYWORDS.items():
+        score = 0
+        for word in words:
+            if word.lower() in text_lower:
+                score += 1
+        scores[tag] = score
+
+    if max(scores.values()) == 0:
+        return '宏观态势'
+
+    best_tag = max(CATEGORY_PRIORITY, key=lambda t: (scores[t], CATEGORY_PRIORITY.index(t)))
+    return best_tag
+
 
 def auto_tag(title: str, content: str) -> list:
-    """根据标题和正文自动匹配标签。"""
+    """根据标题和正文自动匹配标签。
+    返回：原有技术标签 + 一个五大分类标签。
+    """
     text = (title or '') + ' ' + (content or '')[:2000]
     text_lower = text.lower()
     tags = []
 
+    # 1. 原有技术标签
     for category, words in KEYWORDS.items():
         for word in words:
             if word.lower() in text_lower:
@@ -67,6 +136,10 @@ def auto_tag(title: str, content: str) -> list:
             if word.lower() in text_lower:
                 tags.append(tag)
                 break
+
+    # 2. 五大分类标签（必须有且仅有一个）
+    category_tag = _match_category(text_lower)
+    tags.append(category_tag)
 
     return list(set(tags))
 
@@ -129,6 +202,10 @@ def fetch_homepage_list(cookies):
             continue
         seen_urls.add(full_url)
 
+        # Skip articles with a clear non-today date to avoid fetching stale pages
+        if article_date and article_date != today:
+            continue
+
         articles.append({
             'title': title,
             'url': full_url,
@@ -173,6 +250,13 @@ def fetch_article_detail(url, cookies):
             time_tag = soup.find('time')
             if time_tag:
                 time_text = time_tag.get_text(strip=True)
+            # Fallback: common date class names on flash/reference pages
+            if not time_text:
+                for cls in ['time', 'date', 'published', 'post-time', 'post_date']:
+                    tag = soup.find('span', class_=cls) or soup.find('div', class_=cls) or soup.find('p', class_=cls)
+                    if tag:
+                        time_text = tag.get_text(strip=True)
+                        break
         else:
             time_tag = soup.find('span', property='schema:dateCreated')
             if time_tag:
@@ -291,7 +375,7 @@ def main():
                 source_domain = urlparse(ref_url).netloc
             except Exception:
                 pass
-            time.sleep(1.5)  # 礼貌延迟
+            time.sleep(0.3)  # 礼貌延迟
         else:
             original_date = None
 

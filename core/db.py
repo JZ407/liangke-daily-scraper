@@ -93,7 +93,9 @@ def insert_or_update_article(
             existing.reference_title = reference_title
             existing.source_domain = source_domain
             existing.original_date = original_date
-            existing.liangke_date = liangke_date
+            # Preserve existing liangke_date if new one is later (likely a fallback to today)
+            if liangke_date and (not existing.liangke_date or liangke_date <= existing.liangke_date):
+                existing.liangke_date = liangke_date
             existing.tags = tags or []
             session.commit()
             return {'action': 'updated', 'id': existing.id, 'fetch_count': existing.fetch_count}
