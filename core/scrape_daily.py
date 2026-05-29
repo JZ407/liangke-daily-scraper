@@ -60,6 +60,14 @@ CATEGORY_KEYWORDS = {
         '营收', '收入', '利润', '亏损', '财报', '业绩', '增长',
         '股权', '股东', '控股', '参股', '注资', '增资', '扩股',
         'a轮', 'b轮', 'c轮', 'd轮', '种子轮', '天使轮', '战略融资',
+        'raise', 'raised', 'raises', 'raising', 'funding', 'fund', 'funds',
+        'series', 'equity', 'offering', 'pricing of', 'closes',
+        'completes acquisition', 'completes sale', 'acquires',
+        'stock', 'shares', 'shareholder', 'market cap', 'market capital',
+        'capital', 'backed by', 'led by', 'investor', 'venture',
+        'grant', 'awarded', 'contract award', 'million dollar',
+        'billion dollar', 'm deal', 'mn deal', 'loan', 'bond',
+        'debt', 'credit', 'capital raise', 'capital raising',
     ],
     '产品动态': [
         '产品', '发布', '推出', '上市', '芯片', '处理器', '计算机',
@@ -243,6 +251,20 @@ def fetch_article_detail(url, cookies):
                 title_text = title_tag.get_text(strip=True)
                 # Remove site suffix like " | 量子科技中心_量科网"
                 title = title_text.split('|')[0].strip()
+        if title == '无标题':
+            # Fallback: try og:title or the first substantial heading-like text
+            og = soup.find('meta', property='og:title')
+            if og and og.get('content'):
+                t = og['content'].split('|')[0].strip()
+                if t and t != '量子科技中心_量科网':
+                    title = t
+        if title == '无标题':
+            # Fallback: look for any h1/h2 with substantive text
+            for h in soup.find_all(['h1', 'h2']):
+                t = h.get_text(strip=True)
+                if len(t) > 10 and '量子科技中心' not in t and '量科网' not in t:
+                    title = t
+                    break
 
         # Time
         time_text = ''
@@ -275,6 +297,15 @@ def fetch_article_detail(url, cookies):
         else:
             content_div = soup.find('div', class_='content')
 
+        # Fallbacks for flash/reference when specific class not found
+        if not content_div:
+            for cls in ['content', 'article', 'article-content', 'main-content']:
+                content_div = soup.find('div', class_=cls) or soup.find(class_=cls)
+                if content_div:
+                    break
+        if not content_div:
+            content_div = soup.find('article') or soup.find('main')
+
         if content_div:
             paragraphs = content_div.find_all(['p', 'h2', 'h3', 'h4', 'li'])
             if not paragraphs:
@@ -286,6 +317,15 @@ def fetch_article_detail(url, cookies):
                     if text:
                         lines.append(text)
                 content_text = '\n'.join(lines)
+
+        # Final fallback: get all text from body (minus nav/footer)
+        if not content_text:
+            body = soup.find('body')
+            if body:
+                # Remove nav, header, footer noise
+                for noise in body.find_all(['nav', 'header', 'footer', 'script', 'style']):
+                    noise.decompose()
+                content_text = body.get_text(separator='\n', strip=True)
 
         # Reference links (外部参考链接)
         ref_links = []
