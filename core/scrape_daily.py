@@ -360,6 +360,54 @@ def fetch_article_detail(url, cookies):
                 'primary_reference': None, 'liangke_date': None}
 
 
+def _extract_keywords(title):
+    """Extract meaningful keywords from a title using jieba for Chinese segmentation."""
+    import jieba, re
+    stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+                  'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from',
+                  'and', 'or', 'but', 'not', 'this', 'that', 'it', 'its',
+                  'has', 'have', 'had', 'will', 'would', 'could', 'should',
+                  'may', 'might', 'can', 'new', 'first', 'more', 'than',
+                  '了', '的', '在', '是', '和', '与', '及', '或',
+                  '为', '以', '等', '从', '到', '对', '被', '把', '向',
+                  '将', '就', '也', '都', '还', '而', '但', '却', '因',
+                  '所', '其', '中', '上', '下', '之', '已', '于', '该'}
+    words = jieba.lcut((title or '').lower())
+    return {w.strip() for w in words if len(w.strip()) >= 2 and w.strip() not in stop_words}
+
+
+def find_similar_article(title, date_str):
+    """Check if a semantically similar article already exists on the same date."""
+    try:
+        from db import get_session, Article
+        import jieba
+        session = get_session()
+        today_articles = session.query(Article).filter(
+            Article.liangke_date == date_str
+        ).all()
+
+        new_kw = _extract_keywords(title)
+        if len(new_kw) < 3:
+            session.close()
+            return None
+
+        for art in today_articles:
+            exist_kw = _extract_keywords(art.title or '')
+            if len(exist_kw) < 3:
+                continue
+            overlap = len(new_kw & exist_kw)
+            min_len = min(len(new_kw), len(exist_kw))
+            # Require both high overlap ratio AND a minimum number of matching terms
+            if min_len > 0 and overlap / min_len >= 0.6 and overlap >= 3:
+                session.close()
+                return {'id': art.id, 'title': art.title}
+
+        session.close()
+    except Exception:
+        pass
+    return None
+
+
 def main():
     cookies = load_cookies()
     if not cookies:
@@ -421,6 +469,14 @@ def main():
 
         # Deduplication check
         exists = article_exists(ref_url, detail['url'])
+
+        # Semantic dedup: check if similar title already exists today
+        if not exists and detail['title']:
+            similar = find_similar_article(detail['title'], today)
+            if similar:
+                print(f"  -> DUPLICATE (similar to id={similar['id']}: {similar['title'][:50]})")
+                stats['skipped'] += 1
+                continue
 
         # Auto-tag
         tags = auto_tag(detail['title'], detail['content'])
