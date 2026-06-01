@@ -125,31 +125,19 @@ def _match_category(text_lower: str) -> str:
 
 
 def auto_tag(title: str, content: str) -> list:
-    """根据标题和正文自动匹配标签。
-    返回：原有技术标签 + 一个五大分类标签。
+    """Project-based auto-tagging using unified tagger.
+    Returns project-based tags dict as JSON string.
     """
+    sys.path.insert(0, 'D:/Claude_code/knowledge_graph')
+    from core.tagger import tag_article
+    result = tag_article(title, content, '')
+    # Also include old 5-category from local keyword matching
     text = (title or '') + ' ' + (content or '')[:2000]
     text_lower = text.lower()
-    tags = []
-
-    # 1. 原有技术标签
-    for category, words in KEYWORDS.items():
-        for word in words:
-            if word.lower() in text_lower:
-                tags.append(category)
-                break
-
-    for tag, words in SPECIFIC_TAGS.items():
-        for word in words:
-            if word.lower() in text_lower:
-                tags.append(tag)
-                break
-
-    # 2. 五大分类标签（必须有且仅有一个）
-    category_tag = _match_category(text_lower)
-    tags.append(category_tag)
-
-    return list(set(tags))
+    old_cat = _match_category(text_lower)
+    if old_cat not in result['weekly']:
+        result['weekly'].append(old_cat)
+    return result
 
 
 def load_cookies():
@@ -481,7 +469,9 @@ def main():
         # Auto-tag
         tags = auto_tag(detail['title'], detail['content'])
         if tags:
-            print(f"  -> Tags: {', '.join(tags)}")
+            weekly = tags.get('weekly', [])
+            search = tags.get('search_tags', [])
+            print(f"  -> 周报: {', '.join(weekly)} | 检索: {', '.join(search[:5])}")
 
         try:
             result = insert_or_update_article(

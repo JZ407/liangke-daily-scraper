@@ -64,7 +64,7 @@ def insert_or_update_article(
     liangke_date,
     source_domain: str,
     reference_title: str,
-    tags: list
+    tags
 ) -> dict:
     """
     Insert new article or update existing one (increment fetch_count).
@@ -96,7 +96,7 @@ def insert_or_update_article(
             # Preserve existing liangke_date if new one is later (likely a fallback to today)
             if liangke_date and (not existing.liangke_date or liangke_date <= existing.liangke_date):
                 existing.liangke_date = liangke_date
-            existing.tags = tags or []
+            existing.tags = tags if tags else None
             session.commit()
             return {'action': 'updated', 'id': existing.id, 'fetch_count': existing.fetch_count}
         else:
@@ -111,7 +111,7 @@ def insert_or_update_article(
                 liangke_date=liangke_date,
                 source_domain=source_domain,
                 reference_title=reference_title,
-                tags=tags or [],
+                tags=tags if tags else None,
                 first_seen_at=datetime.now(),
                 last_seen_at=datetime.now(),
                 fetch_count=1
