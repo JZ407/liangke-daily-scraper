@@ -1,6 +1,7 @@
 """
 量科网每日新闻抓取脚本 (MySQL + 去重 + 原始日期提取)
 """
+import sys
 import requests
 from bs4 import BeautifulSoup
 import pickle
@@ -253,6 +254,16 @@ def fetch_article_detail(url, cookies):
                 if len(t) > 10 and '量子科技中心' not in t and '量科网' not in t:
                     title = t
                     break
+        if title == '无标题':
+            # Final fallback: extract from page body text
+            body = soup.find('body')
+            if body:
+                text = body.get_text(separator='\n', strip=True)
+                lines = [l.strip() for l in text.split('\n') if l.strip() and len(l.strip()) > 15]
+                for l in lines:
+                    if '量子科技中心' not in l and '量科网' not in l and 'cookie' not in l.lower():
+                        title = l[:200]
+                        break
 
         # Time
         time_text = ''
@@ -317,11 +328,37 @@ def fetch_article_detail(url, cookies):
 
         # Reference links (外部参考链接)
         ref_links = []
-        for a in soup.find_all('a'):
+        # Method 1: Find <a> tag containing "参考来源" or "参考链接" text
+        for a in soup.find_all('a', href=True):
             text = a.get_text(strip=True)
             href = a.get('href', '').strip()
-            if ('参考链接' in text or '参考来源' in text) and href and href.startswith('http'):
+            if ('参考来源' in text or '参考链接' in text) and href.startswith('http'):
                 ref_links.append({'text': text, 'url': href})
+        # Method 2: find label element, get next sibling link
+        if not ref_links:
+            for el in soup.find_all(['span', 'label', 'div', 'p', 'strong', 'b']):
+                text = el.get_text(strip=True)
+                if '参考来源' in text or '参考链接' in text:
+                    parent = el.parent
+                    for a in parent.find_all('a', href=True):
+                        href = a.get('href', '').strip()
+                        if href.startswith('http') and 'qtc.com.cn' not in href:
+                            ref_links.append({'text': a.get_text(strip=True), 'url': href})
+                    if ref_links:
+                        break
+        # Method 3: first non-qtc external link with "参考" in text
+        _footer_noise = ['beian.miit.gov.cn', 'gov.cn', 'beian']
+        if not ref_links:
+            for a in soup.find_all('a', href=True):
+                href = a.get('href', '').strip()
+                text = a.get_text(strip=True)
+                if not href.startswith('http'):
+                    continue
+                if any(n in href for n in _footer_noise) or 'qtc.com.cn' in href:
+                    continue
+                if len(text) > 3:
+                    ref_links.append({'text': text, 'url': href})
+                    break
 
         # Primary reference: the first 参考链接
         primary_ref = ref_links[0] if ref_links else None
@@ -396,10 +433,42 @@ def find_similar_article(title, date_str):
     return None
 
 
+def check_cookie_valid(cookies):
+    """Verify cookie can access logged-in content (参考来源 links)."""
+    try:
+        test_url = 'http://www.qtc.com.cn/reference/178028316033556.html'
+        resp = requests.get(test_url, cookies=cookies, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        # If logged in, "参考来源" link should point to external URL, not /user/login
+        for a in soup.find_all('a', href=True):
+            text = a.get_text(strip=True)
+            href = a.get('href', '').strip()
+            if ('参考来源' in text or '参考链接' in text):
+                if href.startswith('/user/login'):
+                    return False, 'Cookie expired — 参考来源指向登录页'
+                if href.startswith('http'):
+                    return True, 'OK'
+        # No 参考来源 found at all
+        login_links = len(soup.find_all('a', href='/user/login'))
+        if login_links > 0:
+            return False, 'Cookie expired — 页面处于未登录状态'
+        return False, '参考来源链接未找到'
+    except Exception as e:
+        return False, f'Cookie check failed: {e}'
+
+
 def main():
     cookies = load_cookies()
     if not cookies:
+        print('ERROR: No cookie file found. Run update_cookie.bat first.')
         return
+
+    cookie_ok, cookie_msg = check_cookie_valid(cookies)
+    if not cookie_ok:
+        print(f'ERROR: {cookie_msg}')
+        print('Please re-login to www.qtc.com.cn and update the cookie.')
+        return
+    print(f'Cookie check: {cookie_msg}')
 
     today = get_today_str()
     articles = fetch_homepage_list(cookies)
