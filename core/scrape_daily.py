@@ -8,7 +8,7 @@ import pickle
 import time
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from extract_original_date import get_original_date
@@ -200,6 +200,13 @@ def get_today_str():
     return datetime.now().strftime('%Y-%m-%d')
 
 
+def get_target_dates():
+    """Return today + yesterday (to catch any missed in yesterday's run)."""
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    return {today.strftime('%Y-%m-%d'), yesterday.strftime('%Y-%m-%d')}
+
+
 def fetch_homepage_list(cookies):
     """Fetch homepage and extract today's news URLs."""
     print(f"Fetching homepage: {BASE_URL}")
@@ -207,8 +214,8 @@ def fetch_homepage_list(cookies):
     resp.encoding = resp.apparent_encoding or 'utf-8'
     soup = BeautifulSoup(resp.text, 'html.parser')
 
-    today = get_today_str()
-    print(f"Looking for news dated: {today}")
+    target_dates = get_target_dates()
+    print(f"Looking for news dated: {sorted(target_dates)}")
 
     articles = []
     seen_urls = set()
@@ -245,8 +252,8 @@ def fetch_homepage_list(cookies):
             continue
         seen_urls.add(full_url)
 
-        # Skip articles with a clear non-today date to avoid fetching stale pages
-        if article_date and article_date != today:
+        # Skip articles not from today or yesterday
+        if article_date and article_date not in target_dates:
             continue
 
         articles.append({
@@ -576,8 +583,9 @@ def main():
         else:
             art_date_str = art.get('date')
 
-        if art_date_str and art_date_str != today:
-            print(f"  -> Skipped (date: {art_date_str}, not today)")
+        target_dates = get_target_dates()
+        if art_date_str and art_date_str not in target_dates:
+            print(f"  -> Skipped (date: {art_date_str}, not in target range)")
             stats['skipped'] += 1
             continue
 
