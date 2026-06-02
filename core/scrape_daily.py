@@ -259,173 +259,207 @@ def fetch_homepage_list(cookies):
     return articles
 
 
+# ── Page-type-specific extractors ──────────────────────────────────
+
+def _extract_ref_link(soup):
+    """Common: extract external reference link from a page."""
+    # Method 1: <a> tag with "参考来源" or "参考链接" text
+    for a in soup.find_all('a', href=True):
+        text = a.get_text(strip=True)
+        href = a.get('href', '').strip()
+        if ('参考来源' in text or '参考链接' in text) and href.startswith('http'):
+            return {'text': text, 'url': href}
+    # Method 2: label element with nearby <a>
+    for el in soup.find_all(['span', 'label', 'div', 'p']):
+        if '参考来源' in el.get_text(strip=True) or '参考链接' in el.get_text(strip=True):
+            for a in el.parent.find_all('a', href=True):
+                href = a.get('href', '').strip()
+                if href.startswith('http') and 'qtc.com.cn' not in href:
+                    return {'text': a.get_text(strip=True), 'url': href}
+    return None
+
+
+def _extract_liangke_date(soup):
+    """Common: extract liangke date from time tag or date classes."""
+    time_tag = soup.find('time') or soup.find('span', class_='time')
+    if not time_tag:
+        for cls in ['time', 'date', 'published', 'post-time']:
+            time_tag = soup.find('span', class_=cls) or soup.find('div', class_=cls)
+            if time_tag: break
+    if time_tag:
+        m = re.search(r'(\d{4}-\d{2}-\d{2})', time_tag.get_text(strip=True))
+        if m:
+            try: return datetime.strptime(m.group(1), '%Y-%m-%d').date()
+            except ValueError: pass
+    return None
+
+
+def _extract_flash(soup, url):
+    """Flash pages: h2 title, body text from page (not div.txt sidebar), external reference link."""
+    title = ''
+    h2 = soup.find('h2')
+    if h2: title = h2.get_text(strip=True)
+    if not title:
+        ttag = soup.find('title')
+        if ttag: title = ttag.get_text(strip=True).split('|')[0].strip()
+
+    # Flash page body: text after h2/date, before related-articles sidebar
+    # The content is NOT in div.txt (those are sidebar snippets). Get body text and filter.
+    content = ''
+    body = soup.find('body')
+    if body:
+        for noise in body.find_all(['nav','header','footer','script','style']):
+            noise.decompose()
+        lines = [l.strip() for l in body.get_text(separator='\n', strip=True).split('\n') if l.strip()]
+        # Find the article body: first long paragraph after date or title
+        content = ''
+        title_skipped = False
+        for l in lines:
+            # Skip first occurrence of title (the heading itself)
+            if not title_skipped and title and title[:15] in l:
+                title_skipped = True; continue
+            if re.match(r'\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}', l): continue
+            if len(l) < 50: continue
+            if any(kw in l for kw in ['量科网 - 量子科技中心', '粤ICP', '粤公网', 'Copyright']): break
+            content = l; break
+
+    ref = _extract_ref_link(soup)
+    return {
+        'title': title or '无标题',
+        'content': content,
+        'primary_reference': ref,
+        'liangke_date': _extract_liangke_date(soup),
+    }
+
+
+def _extract_reference(soup, url):
+    """Reference pages: h2 title, div.refer-txt content, trim header noise + footer metadata."""
+    title = ''
+    h2 = soup.find('h2')
+    if h2: title = h2.get_text(strip=True)
+    if not title:
+        ttag = soup.find('title')
+        if ttag: title = ttag.get_text(strip=True).split('|')[0].strip()
+
+    content = ''
+    content_div = soup.find('div', class_='refer-txt')
+    if content_div:
+        content = content_div.get_text(separator='\n', strip=True)
+    if not content:
+        body = soup.find('body')
+        if body:
+            for noise in body.find_all(['nav','header','footer','script','style']):
+                noise.decompose()
+            content = body.get_text(separator='\n', strip=True)
+
+    # Trim: everything before the 3rd arrow (参考来源➔ PDF下载➔ HTML版➔ ...)
+    arrows = [m.start() for m in re.finditer('➔', content)]
+    if len(arrows) >= 3:
+        content = content[arrows[2] + 1:].strip()
+    # Trim: everything after "作者单位："
+    if '作者单位：' in content:
+        content = content.split('作者单位：')[0].strip()
+    elif '作者单位:' in content:
+        content = content.split('作者单位:')[0].strip()
+
+    ref = _extract_ref_link(soup)
+    return {
+        'title': title or '无标题',
+        'content': content,
+        'primary_reference': ref,
+        'liangke_date': _extract_liangke_date(soup),
+    }
+
+
+def _extract_article(soup, url):
+    """Article pages: h1 title + full body, trim only nav crumbs + page footer."""
+    title = ''
+    h1 = soup.find('h1', class_='page-header') or soup.find('h1')
+    if h1: title = h1.get_text(strip=True)
+    if not title:
+        ttag = soup.find('title')
+        if ttag: title = ttag.get_text(strip=True).split('|')[0].strip()
+
+    content = ''
+    body = soup.find('body')
+    if body:
+        for noise in body.find_all(['nav','header','footer','script','style']):
+            noise.decompose()
+        lines = [l.strip() for l in body.get_text(separator='\n').split('\n') if l.strip()]
+
+        # Find start: after the h1 title line
+        start_idx = 0
+        for i, l in enumerate(lines):
+            if title and title[:15] in l:
+                start_idx = i + 1
+                break
+
+        # Skip a few metadata lines (date, view count, category, institution name)
+        skip_count = 0
+        while start_idx + skip_count < len(lines) and skip_count < 5:
+            l = lines[start_idx + skip_count]
+            is_meta = (
+                re.match(r'\d{4}-\d{2}-\d{2}', l) or           # date line
+                (l.isdigit() and len(l) < 5) or                 # view count
+                l in ('技术研究','行业观点','企业动态') or      # category tag
+                (len(l) < 30 and not any(p in l for p in '，。！？'))  # short institution name
+            )
+            if is_meta:
+                skip_count += 1
+            else:
+                break
+
+        # Take everything from article start to page footer
+        result_lines = []
+        for l in lines[start_idx + skip_count:]:
+            # Trim: nav crumbs, short UI labels
+            if l in ('首页','快讯','文章','参考','企服','VIP','企业','所有','短讯',
+                     '量科快讯','商业情报','一点数据','知识碎片','实时快讯','用户专享：'):
+                continue
+            # Stop only at definitive page footer (not mid-content sections)
+            if any(kw in l for kw in ['量科网 - 量子科技中心', '粤ICP备', '粤公网安备', 'Copyright']):
+                break
+            result_lines.append(l)
+
+        content = '\n'.join(result_lines).strip()
+        if '注册用户以继续' in content:
+            content = content.split('注册用户以继续')[0].strip()
+        # Trim after "参考链接¹" — everything after is unrelated
+        if '参考链接¹' in content:
+            content = content.split('参考链接¹')[0].strip()
+
+    ref = _extract_ref_link(soup)
+    return {
+        'title': title or '无标题',
+        'content': content,
+        'primary_reference': ref,
+        'liangke_date': _extract_liangke_date(soup),
+    }
+
+
+# ── Main fetch function (dispatches to type-specific extractor) ────
+
 def fetch_article_detail(url, cookies):
-    """Fetch full article content including reference links."""
+    """Fetch full article detail using page-type-specific extraction."""
     try:
         resp = requests.get(url, cookies=cookies, headers=HEADERS, timeout=30)
         resp.encoding = resp.apparent_encoding or 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
 
-        is_flash = '/flash/' in url
-        is_reference = '/reference/' in url
+        if resp.status_code == 404 or '404' in (soup.find('title').get_text(strip=True) if soup.find('title') else ''):
+            return {'title': 'ERROR', 'time_text': '', 'url': url,
+                    'content': f'404: page not found', 'primary_reference': None, 'liangke_date': None}
 
-        # Title - try multiple strategies
-        title = '无标题'
-        if is_flash or is_reference:
-            title_tag = soup.find('h2')
-            if title_tag:
-                title = title_tag.get_text(strip=True)
+        if '/reference/' in url:
+            result = _extract_reference(soup, url)
+        elif '/flash/' in url:
+            result = _extract_flash(soup, url)
         else:
-            title_tag = soup.find('h1', class_='page-header')
-            if title_tag:
-                title = title_tag.get_text(strip=True)
-        if title == '无标题':
-            # Fallback: extract from <title> tag
-            title_tag = soup.find('title')
-            if title_tag:
-                title_text = title_tag.get_text(strip=True)
-                # Remove site suffix like " | 量子科技中心_量科网"
-                title = title_text.split('|')[0].strip()
-        if title == '无标题':
-            # Fallback: try og:title or the first substantial heading-like text
-            og = soup.find('meta', property='og:title')
-            if og and og.get('content'):
-                t = og['content'].split('|')[0].strip()
-                if t and t != '量子科技中心_量科网':
-                    title = t
-        if title == '无标题':
-            # Fallback: look for any h1/h2 with substantive text
-            for h in soup.find_all(['h1', 'h2']):
-                t = h.get_text(strip=True)
-                if len(t) > 10 and '量子科技中心' not in t and '量科网' not in t:
-                    title = t
-                    break
-        if title == '无标题':
-            # Final fallback: extract from page body text
-            body = soup.find('body')
-            if body:
-                text = body.get_text(separator='\n', strip=True)
-                lines = [l.strip() for l in text.split('\n') if l.strip() and len(l.strip()) > 15]
-                for l in lines:
-                    if '量子科技中心' not in l and '量科网' not in l and 'cookie' not in l.lower():
-                        title = l[:200]
-                        break
+            result = _extract_article(soup, url)
 
-        # Time
-        time_text = ''
-        if is_flash or is_reference:
-            time_tag = soup.find('time')
-            if time_tag:
-                time_text = time_tag.get_text(strip=True)
-            # Fallback: common date class names on flash/reference pages
-            if not time_text:
-                for cls in ['time', 'date', 'published', 'post-time', 'post_date']:
-                    tag = soup.find('span', class_=cls) or soup.find('div', class_=cls) or soup.find('p', class_=cls)
-                    if tag:
-                        time_text = tag.get_text(strip=True)
-                        break
-        else:
-            time_tag = soup.find('span', property='schema:dateCreated')
-            if time_tag:
-                time_text = time_tag.get_text(strip=True)
-            else:
-                time_tag = soup.find('span', class_='time')
-                if time_tag:
-                    time_text = time_tag.get_text(strip=True)
-
-        # Content
-        content_text = ''
-        if is_flash:
-            content_div = soup.find('div', class_='txt')
-        elif is_reference:
-            content_div = soup.find('div', class_='refer-txt')
-        else:
-            content_div = soup.find('div', class_='content')
-
-        # Fallbacks for flash/reference when specific class not found
-        if not content_div:
-            for cls in ['content', 'article', 'article-content', 'main-content']:
-                content_div = soup.find('div', class_=cls) or soup.find(class_=cls)
-                if content_div:
-                    break
-        if not content_div:
-            content_div = soup.find('article') or soup.find('main')
-
-        if content_div:
-            paragraphs = content_div.find_all(['p', 'h2', 'h3', 'h4', 'li'])
-            if not paragraphs:
-                content_text = content_div.get_text(separator='\n', strip=True)
-            else:
-                lines = []
-                for p in paragraphs:
-                    text = p.get_text(strip=True)
-                    if text:
-                        lines.append(text)
-                content_text = '\n'.join(lines)
-
-        # Final fallback: get all text from body (minus nav/footer)
-        if not content_text:
-            body = soup.find('body')
-            if body:
-                # Remove nav, header, footer noise
-                for noise in body.find_all(['nav', 'header', 'footer', 'script', 'style']):
-                    noise.decompose()
-                content_text = body.get_text(separator='\n', strip=True)
-
-        # Reference links (外部参考链接)
-        ref_links = []
-        # Method 1: Find <a> tag containing "参考来源" or "参考链接" text
-        for a in soup.find_all('a', href=True):
-            text = a.get_text(strip=True)
-            href = a.get('href', '').strip()
-            if ('参考来源' in text or '参考链接' in text) and href.startswith('http'):
-                ref_links.append({'text': text, 'url': href})
-        # Method 2: find label element, get next sibling link
-        if not ref_links:
-            for el in soup.find_all(['span', 'label', 'div', 'p', 'strong', 'b']):
-                text = el.get_text(strip=True)
-                if '参考来源' in text or '参考链接' in text:
-                    parent = el.parent
-                    for a in parent.find_all('a', href=True):
-                        href = a.get('href', '').strip()
-                        if href.startswith('http') and 'qtc.com.cn' not in href:
-                            ref_links.append({'text': a.get_text(strip=True), 'url': href})
-                    if ref_links:
-                        break
-        # Method 3: first non-qtc external link with "参考" in text
-        _footer_noise = ['beian.miit.gov.cn', 'gov.cn', 'beian']
-        if not ref_links:
-            for a in soup.find_all('a', href=True):
-                href = a.get('href', '').strip()
-                text = a.get_text(strip=True)
-                if not href.startswith('http'):
-                    continue
-                if any(n in href for n in _footer_noise) or 'qtc.com.cn' in href:
-                    continue
-                if len(text) > 3:
-                    ref_links.append({'text': text, 'url': href})
-                    break
-
-        # Primary reference: the first 参考链接
-        primary_ref = ref_links[0] if ref_links else None
-
-        # Extract liangke_date from time_text
-        liangke_date = None
-        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', time_text)
-        if date_match:
-            try:
-                liangke_date = datetime.strptime(date_match.group(1), '%Y-%m-%d').date()
-            except ValueError:
-                pass
-
-        return {
-            'title': title,
-            'time_text': time_text,
-            'url': url,
-            'content': content_text,
-            'primary_reference': primary_ref,
-            'liangke_date': liangke_date
-        }
+        result['url'] = url
+        result['time_text'] = ''
+        return result
     except Exception as e:
         return {'title': 'ERROR', 'time_text': '', 'url': url, 'content': str(e),
                 'primary_reference': None, 'liangke_date': None}
@@ -608,6 +642,19 @@ def main():
                 print(f"  -> UPDATED (id={result['id']}, count={result['fetch_count']})")
                 stats['updated'] += 1
 
+            # Set page_type based on URL
+            from db import get_session as _gs, Article as _A
+            _s = _gs()
+            try:
+                _art = _s.query(_A).filter(_A.id == result['id']).first()
+                if _art:
+                    if '/flash/' in art['url']: _art.page_type = 'flash'
+                    elif '/reference/' in art['url']: _art.page_type = 'reference'
+                    elif '/article/' in art['url']: _art.page_type = 'article'
+                    _s.commit()
+            finally:
+                _s.close()
+
         except Exception as e:
             print(f"  -> DB ERROR: {e}")
             stats['errors'] += 1
@@ -619,7 +666,7 @@ def main():
         today_arts = session.query(Article).filter(Article.liangke_date == today).all()
         if today_arts:
             # Include content summary for better context
-            items = [(a.id, f'{a.title[:120]} | {((a.content or \"\")[:100]).strip()}') for a in today_arts]
+            items = [(a.id, f'{a.title[:120]} | {((a.content or "")[:100]).strip()}') for a in today_arts]
             llm_results = _llm_classify_batch([t for _, t in items])
             if llm_results:
                 reclassified = 0
