@@ -11,7 +11,7 @@ ONEDRIVE_DIR = 'C:/Users/zhouj/OneDrive/liangke_database'
 
 # Source paths
 INSTITUTION_DB = 'D:/Claude_code/institution_news/institutions.db'
-HISTORICAL_DB = 'D:/Claude_code/liangke_historical/historical_v3.db'
+HISTORICAL_DB = 'D:/Claude_code/liangke_historical/historical_final.db'
 
 # MySQL config
 MYSQL_CONFIG = {
@@ -105,7 +105,7 @@ def sync_all():
 
     sync_mysql_to_sqlite()
     sync_file(INSTITUTION_DB, 'institutions.db')
-    sync_file(HISTORICAL_DB, 'historical_v3.db')
+    sync_file(HISTORICAL_DB, 'historical_final.db')
 
     # Write last sync time
     with open(os.path.join(ONEDRIVE_DIR, 'last_sync.txt'), 'w') as f:
