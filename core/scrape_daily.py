@@ -630,6 +630,12 @@ def main():
             search = tags.get('search_tags', [])
             print(f"  -> 周报: {', '.join(weekly)} | 检索: {', '.join(search[:5])}")
 
+        # Determine page_type from URL
+        page_type = ''
+        if '/flash/' in art['url']: page_type = 'flash'
+        elif '/reference/' in art['url']: page_type = 'reference'
+        elif '/article/' in art['url']: page_type = 'article'
+
         try:
             result = insert_or_update_article(
                 reference_url=ref_url,
@@ -640,7 +646,8 @@ def main():
                 liangke_date=detail['liangke_date'] or datetime.strptime(today, '%Y-%m-%d').date(),
                 source_domain=source_domain,
                 reference_title=ref_title,
-                tags=tags
+                tags=tags,
+                page_type=page_type
             )
 
             if result['action'] == 'inserted':
@@ -649,19 +656,6 @@ def main():
             else:
                 print(f"  -> UPDATED (id={result['id']}, count={result['fetch_count']})")
                 stats['updated'] += 1
-
-            # Set page_type based on URL
-            from db import get_session as _gs, Article as _A
-            _s = _gs()
-            try:
-                _art = _s.query(_A).filter(_A.id == result['id']).first()
-                if _art:
-                    if '/flash/' in art['url']: _art.page_type = 'flash'
-                    elif '/reference/' in art['url']: _art.page_type = 'reference'
-                    elif '/article/' in art['url']: _art.page_type = 'article'
-                    _s.commit()
-            finally:
-                _s.close()
 
         except Exception as e:
             print(f"  -> DB ERROR: {e}")

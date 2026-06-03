@@ -27,6 +27,7 @@ class Article(Base):
     source_domain = Column(String(200))
     reference_title = Column(String(200))
     tags = Column(JSON)
+    page_type = Column(String(20), default='')
     first_seen_at = Column(DateTime, default=datetime.now)
     last_seen_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     fetch_count = Column(Integer, default=1)
@@ -64,7 +65,8 @@ def insert_or_update_article(
     liangke_date,
     source_domain: str,
     reference_title: str,
-    tags
+    tags,
+    page_type: str = ''
 ) -> dict:
     """
     Insert new article or update existing one (increment fetch_count).
@@ -97,6 +99,8 @@ def insert_or_update_article(
             if liangke_date and (not existing.liangke_date or liangke_date <= existing.liangke_date):
                 existing.liangke_date = liangke_date
             existing.tags = tags if tags else None
+            if page_type:
+                existing.page_type = page_type
             session.commit()
             return {'action': 'updated', 'id': existing.id, 'fetch_count': existing.fetch_count}
         else:
@@ -112,6 +116,7 @@ def insert_or_update_article(
                 source_domain=source_domain,
                 reference_title=reference_title,
                 tags=tags if tags else None,
+                page_type=page_type,
                 first_seen_at=datetime.now(),
                 last_seen_at=datetime.now(),
                 fetch_count=1
