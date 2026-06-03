@@ -708,6 +708,13 @@ def main():
     print(f"  Total in DB:      {total}")
     print(f"{'='*50}")
 
+    # Sync to OneDrive shared folder
+    try:
+        from sync_to_onedrive import sync_all
+        sync_all()
+    except Exception as e:
+        print(f'  [WARN] OneDrive sync failed: {e}')
+
 
 if __name__ == '__main__':
     main()
