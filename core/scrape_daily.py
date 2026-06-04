@@ -195,7 +195,7 @@ def _llm_classify_batch(articles_info):
         from llm_client import LLMClient
         client = LLMClient(provider='openai', api_key=llm_cfg['api_key'],
                           api_base=llm_cfg['api_base'], model=llm_cfg['model'],
-                          max_tokens=512, timeout=120)
+                          max_tokens=2048, timeout=120)
         response = client.chat([{'role': 'user', 'content': prompt}])
         # Parse response: "1:资本运作\n2:企业资讯\n..."
         results = {}
