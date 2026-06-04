@@ -6,6 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import pickle
 import time
+import random
 import os
 import re
 from datetime import datetime, timedelta
@@ -15,7 +16,18 @@ from extract_original_date import get_original_date
 from db import insert_or_update_article, article_exists, get_article_count
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+_USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+]
+HEADERS = {'User-Agent': _USER_AGENTS[0]}
+
+def _rotate_ua():
+    """Rotate User-Agent header for anti-scraping."""
+    HEADERS['User-Agent'] = random.choice(_USER_AGENTS)
+
 COOKIE_PATH = os.path.join(BASE_DIR, '..', 'data', 'cookies', 'qtc_cookies.pkl')
 BASE_URL = 'http://www.qtc.com.cn'
 
@@ -266,6 +278,14 @@ def fetch_homepage_list(cookies):
     return articles
 
 
+# ── Anti-scraping protection ───────────────────────────────────────
+
+def _polite_delay(min_s=1.0, max_s=3.0):
+    """Random delay + UA rotation to avoid triggering anti-scraping detection."""
+    time.sleep(random.uniform(min_s, max_s))
+    _rotate_ua()
+
+
 # ── Sub-page list fetchers ──────────────────────────────────────────
 
 def parse_relative_time(text, today_date):
@@ -374,6 +394,8 @@ def fetch_flash_list(cookies, target_dates, max_pages=5):
             print(f"  -> Page {page} has no date spans, stopping")
             break
 
+        _polite_delay()
+
     print(f"  Flash: {len(articles)} candidates from {page+1} pages")
     return articles
 
@@ -459,6 +481,8 @@ def fetch_news_list(cookies, target_dates, max_pages=5):
             print(f"  -> Page {page}: no recent items, stopping")
             break
 
+        _polite_delay()
+
     print(f"  News: {len(articles)} candidates from {page+1} pages")
     return articles
 
@@ -531,6 +555,8 @@ def fetch_reference_list(cookies, target_dates, max_pages=15):
         if not page_has_recent and page >= 1:
             print(f"  -> Page {page}: no recent reference items, stopping")
             break
+
+        _polite_delay()
 
     print(f"  Reference: {len(articles)} candidates from {page+1} pages")
     return articles
@@ -935,7 +961,7 @@ def main():
                 source_domain = urlparse(ref_url).netloc
             except Exception:
                 pass
-            time.sleep(0.3)  # 礼貌延迟
+            time.sleep(0.3)  # polite delay between reference fetches
         else:
             original_date = None
 
@@ -987,6 +1013,8 @@ def main():
         except Exception as e:
             print(f"  -> DB ERROR: {e}")
             stats['errors'] += 1
+
+        _polite_delay()  # anti-scraping: random delay between detail pages
 
     # LLM re-classification: improve 5-category tags for today's articles
     from db import get_session, Article
