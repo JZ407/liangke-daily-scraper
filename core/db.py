@@ -38,19 +38,27 @@ def get_session():
 
 
 def article_exists(reference_url: str, liangke_url: str) -> bool:
-    """Check if article already exists by reference_url or liangke_url."""
+    """Check if article already exists by reference_url or liangke_url.
+
+    Checks both simultaneously to catch cases where reference extraction failed
+    (producing a self-reference to the liangke_url itself).
+    """
     session = get_session()
     try:
-        # Prefer reference_url as unique key
-        if reference_url and reference_url.strip():
-            return session.query(Article).filter(
-                Article.reference_url == reference_url
-            ).first() is not None
-        # Fallback to liangke_url
+        # Check by liangke_url first (always unique)
         if liangke_url and liangke_url.strip():
-            return session.query(Article).filter(
-                Article.liangke_url == liangke_url
-            ).first() is not None
+            if session.query(Article).filter(
+                Article.liangke_url == liangke_url.strip()
+            ).first() is not None:
+                return True
+        # Check by reference_url (may be empty or self-referencing)
+        if reference_url and reference_url.strip():
+            # Skip self-references (qtc.com.cn URLs are not real external references)
+            if 'qtc.com.cn' not in reference_url:
+                if session.query(Article).filter(
+                    Article.reference_url == reference_url.strip()
+                ).first() is not None:
+                    return True
         return False
     finally:
         session.close()
@@ -74,15 +82,15 @@ def insert_or_update_article(
     """
     session = get_session()
     try:
-        # Try to find existing article
+        # Try to find existing article (liangke_url first, then non-self-reference)
         existing = None
-        if reference_url and reference_url.strip():
+        if liangke_url and liangke_url.strip():
             existing = session.query(Article).filter(
-                Article.reference_url == reference_url
+                Article.liangke_url == liangke_url.strip()
             ).first()
-        if not existing and liangke_url and liangke_url.strip():
+        if not existing and reference_url and reference_url.strip() and 'qtc.com.cn' not in reference_url:
             existing = session.query(Article).filter(
-                Article.liangke_url == liangke_url
+                Article.reference_url == reference_url.strip()
             ).first()
 
         if existing:
@@ -91,7 +99,9 @@ def insert_or_update_article(
             # Also update mutable fields in case they changed
             existing.title = title
             existing.content = content
-            existing.reference_url = reference_url.strip() if reference_url and reference_url.strip() else liangke_url
+            # Only update reference_url if the new one is a real external link
+            if reference_url and reference_url.strip() and 'qtc.com.cn' not in reference_url:
+                existing.reference_url = reference_url.strip()
             existing.reference_title = reference_title
             existing.source_domain = source_domain
             existing.original_date = original_date
@@ -104,8 +114,12 @@ def insert_or_update_article(
             session.commit()
             return {'action': 'updated', 'id': existing.id, 'fetch_count': existing.fetch_count}
         else:
-            # Fallback: use liangke_url as reference_url when no external reference exists
-            effective_ref_url = reference_url.strip() if reference_url and reference_url.strip() else liangke_url
+            # Only use external URLs as reference_url; self-references are useless
+            ref = (reference_url or '').strip()
+            if ref and 'qtc.com.cn' not in ref:
+                effective_ref_url = ref
+            else:
+                effective_ref_url = ''
             article = Article(
                 reference_url=effective_ref_url,
                 liangke_url=liangke_url,

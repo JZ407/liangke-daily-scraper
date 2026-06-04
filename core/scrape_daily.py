@@ -832,14 +832,23 @@ def _extract_keywords(title):
     return {w.strip() for w in words if len(w.strip()) >= 2 and w.strip() not in stop_words}
 
 
-def find_similar_article(title, date_str):
-    """Check if a semantically similar article already exists on the same date."""
+def find_similar_article(title, date_str, window_days=3):
+    """Check if a semantically similar article exists within N days.
+
+    Uses jieba keyword overlap. Checks a window of window_days around date_str
+    to catch articles that were scraped on different dates but are the same content.
+    """
     try:
         from db import get_session, Article
         import jieba
+        from datetime import timedelta
         session = get_session()
-        today_articles = session.query(Article).filter(
-            Article.liangke_date == date_str
+        d = datetime.strptime(date_str, '%Y-%m-%d').date()
+        start_d = d - timedelta(days=window_days)
+        end_d = d + timedelta(days=window_days)
+        nearby_articles = session.query(Article).filter(
+            Article.liangke_date >= start_d,
+            Article.liangke_date <= end_d
         ).all()
 
         new_kw = _extract_keywords(title)
@@ -847,7 +856,7 @@ def find_similar_article(title, date_str):
             session.close()
             return None
 
-        for art in today_articles:
+        for art in nearby_articles:
             exist_kw = _extract_keywords(art.title or '')
             if len(exist_kw) < 3:
                 continue
@@ -983,7 +992,7 @@ def main():
             continue
 
         if detail['title']:
-            similar = find_similar_article(detail['title'], today)
+            similar = find_similar_article(detail['title'], art_date_str or today)
             if similar:
                 print(f"  -> DUPLICATE (similar to id={similar['id']})")
                 stats['skipped'] += 1
