@@ -266,6 +266,276 @@ def fetch_homepage_list(cookies):
     return articles
 
 
+# ── Sub-page list fetchers ──────────────────────────────────────────
+
+def parse_relative_time(text, today_date):
+    """Parse relative time strings to approximate dates.
+
+    Handles: 'X小时前' (today), '昨天' (yesterday), 'X天前' (today - X days).
+    Returns datetime.date or None if unparseable.
+    """
+    h_match = re.search(r'(\d+)\s*小时前', text)
+    if h_match:
+        return today_date
+
+    if '昨天' in text:
+        return today_date - timedelta(days=1)
+
+    d_match = re.search(r'(\d+)\s*天前', text)
+    if d_match:
+        return today_date - timedelta(days=int(d_match.group(1)))
+
+    return None
+
+
+def fetch_flash_list(cookies, target_dates, max_pages=5):
+    """Fetch flash articles from /flash?page=N.
+
+    /flash has explicit <span class='date'>YYYY-MM-DD</span>, so dates are reliable.
+    Stops when the earliest date on a page is before min(target_dates).
+    """
+    min_date = min(datetime.strptime(d, '%Y-%m-%d').date() for d in target_dates)
+    articles = []
+    seen_urls = set()
+
+    for page in range(max_pages):
+        url = f'http://www.qtc.com.cn/flash?page={page}'
+        print(f"  Fetching: {url}")
+        try:
+            resp = requests.get(url, cookies=cookies, headers=HEADERS, timeout=30)
+            resp.encoding = resp.apparent_encoding or 'utf-8'
+        except Exception as e:
+            print(f"  -> Error: {e}")
+            break
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        page_oldest_date = None
+
+        # Find all flash links with their dates
+        # Structure: each item has <span class='date'><b class='year'>2026-</b>06-04</span>
+        # followed by <a href='/flash/{id}.html'>title</a>
+        date_spans = soup.find_all('span', class_='date')
+        for ds in date_spans:
+            # Parse date from span
+            full_text = ds.get_text(strip=True)
+            m = re.search(r'(\d{4})-(\d{2})-(\d{2})', full_text)
+            if not m:
+                continue
+            date_str = m.group(0)
+            try:
+                article_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                continue
+
+            if page_oldest_date is None or article_date < page_oldest_date:
+                page_oldest_date = article_date
+
+            # Find the associated link: date span is in div.flash-created,
+            # link is in sibling div.txt. Go up to parent first, then next siblings.
+            link = None
+            date_parent = ds.find_parent()
+            if date_parent:
+                for sibling in date_parent.find_next_siblings(limit=5):
+                    link = sibling.find('a', href=re.compile(r'^/flash/\d+\.html$'))
+                    if link:
+                        break
+            if not link:
+                # Fallback: search in the item container
+                item_container = ds.find_parent('div', class_=re.compile('item'))
+                if item_container:
+                    link = item_container.find('a', href=re.compile(r'^/flash/\d+\.html$'))
+
+            if not link:
+                continue
+
+            href = link.get('href', '').strip()
+            title = link.get_text(strip=True)
+
+            if not title or len(title) < 5:
+                continue
+
+            full_url = f'http://www.qtc.com.cn{href}'
+            if full_url in seen_urls:
+                continue
+            seen_urls.add(full_url)
+
+            if date_str not in target_dates:
+                continue
+
+            articles.append({'title': title, 'url': full_url, 'date': date_str})
+
+        # Stop condition: the oldest date on this page is before our window
+        if page_oldest_date and page_oldest_date < min_date:
+            print(f"  -> Page {page} oldest date {page_oldest_date} < {min_date}, stopping")
+            break
+
+        # If no dates found at all on this page, stop
+        if page_oldest_date is None and len(date_spans) == 0:
+            print(f"  -> Page {page} has no date spans, stopping")
+            break
+
+    print(f"  Flash: {len(articles)} candidates from {page+1} pages")
+    return articles
+
+
+def fetch_news_list(cookies, target_dates, max_pages=5):
+    """Fetch article-type news from /news?page=N.
+
+    /news uses relative time ('X小时前', 'X天前', '昨天'). We parse these to
+    approximate dates and filter by target_dates. Stop when a page is entirely
+    older than 3 days.
+    """
+    today = datetime.now().date()
+    articles = []
+    seen_urls = set()
+
+    for page in range(max_pages):
+        url = f'http://www.qtc.com.cn/news?page={page}'
+        print(f"  Fetching: {url}")
+        try:
+            resp = requests.get(url, cookies=cookies, headers=HEADERS, timeout=30)
+            resp.encoding = resp.apparent_encoding or 'utf-8'
+        except Exception as e:
+            print(f"  -> Error: {e}")
+            break
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Find article links. The structure is:
+        # <a href='/article/{id}.html'>title</a> ... followed by time text nearby
+        page_article_links = soup.find_all('a', href=re.compile(r'^/article/\d+\.html$'))
+
+        if not page_article_links:
+            print(f"  -> Page {page} has no article links, stopping")
+            break
+
+        page_has_recent = False
+
+        for a in page_article_links:
+            href = a.get('href', '').strip()
+            title = a.get_text(strip=True)
+
+            if not title or len(title) < 5:
+                continue
+
+            full_url = f'http://www.qtc.com.cn{href}'
+            if full_url in seen_urls:
+                continue
+            seen_urls.add(full_url)
+
+            # Find time text nearby: go up to <li class='item'> which contains
+            # both the link (in <h3>) and time ("X小时前") after it.
+            time_text = ''
+            # Walk up to <li> or several levels to capture time text
+            for ancestor in a.parents:
+                if ancestor.name in ('li', 'div') and ancestor.get('class'):
+                    cls = ' '.join(ancestor.get('class', []))
+                    if 'item' in cls or 'pic-list' in cls:
+                        time_text = ancestor.get_text(separator=' ', strip=True)
+                        break
+            if not time_text:
+                # Fallback: just use grandparent
+                gp = a.find_parent().find_parent() if a.find_parent() else None
+                if gp:
+                    time_text = gp.get_text(separator=' ', strip=True)
+
+            approx_date = parse_relative_time(time_text, today)
+
+            if approx_date is None:
+                # Can't determine date from listing, include it and verify on detail page
+                articles.append({'title': title, 'url': full_url, 'date': None})
+                page_has_recent = True
+            else:
+                approx_str = approx_date.strftime('%Y-%m-%d')
+                if approx_str in target_dates:
+                    articles.append({'title': title, 'url': full_url, 'date': approx_str})
+                    page_has_recent = True
+                elif approx_date >= min(datetime.strptime(d, '%Y-%m-%d').date() for d in target_dates) - timedelta(days=1):
+                    # Within 1 day of window edge, still include for safety
+                    articles.append({'title': title, 'url': full_url, 'date': approx_str})
+
+        if not page_has_recent and page >= 1:
+            # Second condition: check if most items are old
+            print(f"  -> Page {page}: no recent items, stopping")
+            break
+
+    print(f"  News: {len(articles)} candidates from {page+1} pages")
+    return articles
+
+
+def fetch_reference_list(cookies, target_dates, max_pages=15):
+    """Fetch reference articles from /reference?page=N.
+
+    /reference uses relative time like /news. 8 pages/day so generous max_pages.
+    Stop when a page has no items matching target_dates.
+    """
+    today = datetime.now().date()
+    articles = []
+    seen_urls = set()
+
+    for page in range(max_pages):
+        url = f'http://www.qtc.com.cn/reference?page={page}'
+        print(f"  Fetching: {url}")
+        try:
+            resp = requests.get(url, cookies=cookies, headers=HEADERS, timeout=30)
+            resp.encoding = resp.apparent_encoding or 'utf-8'
+        except Exception as e:
+            print(f"  -> Error: {e}")
+            break
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Find reference article links: href='/reference/{id}.html'
+        ref_links = soup.find_all('a', href=re.compile(r'^/reference/\d+\.html$'))
+
+        if not ref_links:
+            print(f"  -> Page {page} has no reference links, stopping")
+            break
+
+        page_has_recent = False
+
+        for a in ref_links:
+            href = a.get('href', '').strip()
+            title = a.get_text(strip=True)
+
+            if not title or len(title) < 5:
+                continue
+
+            full_url = f'http://www.qtc.com.cn{href}'
+            if full_url in seen_urls:
+                continue
+            seen_urls.add(full_url)
+
+            # Find time text in parent context: <li class='item'> has "X小时前"
+            time_text = ''
+            for ancestor in a.parents:
+                if ancestor.name == 'li' and 'item' in ' '.join(ancestor.get('class', [])):
+                    time_text = ancestor.get_text(separator=' ', strip=True)
+                    break
+            if not time_text:
+                gp = a.find_parent().find_parent() if a.find_parent() else None
+                if gp:
+                    time_text = gp.get_text(separator=' ', strip=True)
+
+            approx_date = parse_relative_time(time_text, today)
+
+            if approx_date is None:
+                articles.append({'title': title, 'url': full_url, 'date': None})
+                page_has_recent = True
+            else:
+                approx_str = approx_date.strftime('%Y-%m-%d')
+                if approx_str in target_dates:
+                    articles.append({'title': title, 'url': full_url, 'date': approx_str})
+                    page_has_recent = True
+
+        if not page_has_recent and page >= 1:
+            print(f"  -> Page {page}: no recent reference items, stopping")
+            break
+
+    print(f"  Reference: {len(articles)} candidates from {page+1} pages")
+    return articles
+
+
 # ── Page-type-specific extractors ──────────────────────────────────
 
 def _extract_ref_link(soup):
@@ -287,17 +557,55 @@ def _extract_ref_link(soup):
 
 
 def _extract_liangke_date(soup):
-    """Common: extract liangke date from time tag or date classes."""
-    time_tag = soup.find('time') or soup.find('span', class_='time')
-    if not time_tag:
-        for cls in ['time', 'date', 'published', 'post-time']:
-            time_tag = soup.find('span', class_=cls) or soup.find('div', class_=cls)
-            if time_tag: break
-    if time_tag:
-        m = re.search(r'(\d{4}-\d{2}-\d{2})', time_tag.get_text(strip=True))
+    """Common: extract liangke date from time/date tags on detail page.
+
+    Searches ALL matching elements (not just first), since the first <span class='time'>
+    may be an institution name rather than a date.
+    """
+    # Collect ALL candidate elements
+    candidates = []
+    candidates.extend(soup.find_all('time'))
+    candidates.extend(soup.find_all('span', class_='time'))
+    for cls in ['date', 'published', 'post-time']:
+        candidates.extend(soup.find_all('span', class_=cls))
+        candidates.extend(soup.find_all('div', class_=cls))
+
+    for tag in candidates:
+        text = tag.get_text(strip=True)
+        m = re.search(r'(\d{4}-\d{2}-\d{2})', text)
         if m:
             try: return datetime.strptime(m.group(1), '%Y-%m-%d').date()
             except ValueError: pass
+
+    # Fallback 1: <span class='date'> with <b class='year'>YYYY-</b>MM-DD
+    for date_span in soup.find_all('span', class_='date'):
+        year_tag = date_span.find('b', class_='year')
+        full_text = date_span.get_text(strip=True)
+        m = re.search(r'(\d{4})-(\d{2})-(\d{2})', full_text)
+        if m:
+            try: return datetime.strptime(m.group(0), '%Y-%m-%d').date()
+            except ValueError: pass
+
+    # Fallback 2: Chinese date format "MM月DD日" in body, infer year from context
+    body = soup.find('body')
+    if body:
+        for noise in body.find_all(['nav','header','script','style']):
+            noise.decompose()
+        body_text = body.get_text()
+        m = re.search(r'(\d{1,2})\s*月\s*(\d{1,2})\s*日', body_text)
+        if m:
+            month, day = int(m.group(1)), int(m.group(2))
+            # Infer year: if MM-DD is in the future vs today, use previous year
+            today = datetime.now().date()
+            year = today.year
+            try:
+                candidate = datetime(year, month, day).date()
+                if candidate > today:
+                    candidate = datetime(year - 1, month, day).date()
+                return candidate
+            except ValueError:
+                pass
+
     return None
 
 
@@ -558,16 +866,36 @@ def main():
     print(f'Cookie check: {cookie_msg}')
 
     today = get_today_str()
-    articles = fetch_homepage_list(cookies)
+    target_dates = get_target_dates()
+    print(f"Target dates: {sorted(target_dates)}")
+
+    # Three sub-page sources (better coverage than mixed homepage)
+    print("\n--- Flash ---")
+    articles = fetch_flash_list(cookies, target_dates)
+    print("\n--- News (article) ---")
+    articles += fetch_news_list(cookies, target_dates)
+    print("\n--- Reference ---")
+    articles += fetch_reference_list(cookies, target_dates)
+
+    # Dedup by URL (same article may appear on multiple sub-pages)
+    seen = set()
+    deduped = []
+    for a in articles:
+        if a['url'] not in seen:
+            seen.add(a['url'])
+            deduped.append(a)
+    articles = deduped
+
+    print(f"\nTotal candidates across all sources: {len(articles)} (after dedup)")
 
     if not articles:
-        print(f"No candidate articles found for {today}.")
+        print(f"No candidate articles found for target dates: {sorted(target_dates)}.")
         return
 
     stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'errors': 0}
 
     for i, art in enumerate(articles, 1):
-        print(f"[{i}/{len(articles)}] {art['title'][:60]}")
+        print(f"\n[{i}/{len(articles)}] {art['title'][:60].encode('gbk', errors='replace').decode('gbk', errors='replace')}")
 
         # Fetch detail
         detail = fetch_article_detail(art['url'], cookies)
@@ -576,14 +904,13 @@ def main():
             stats['errors'] += 1
             continue
 
-        # Validate date
+        # Use detail page date if available, otherwise fall back to listing date
         art_date = detail['liangke_date']
         if art_date:
             art_date_str = art_date.strftime('%Y-%m-%d')
         else:
             art_date_str = art.get('date')
 
-        target_dates = get_target_dates()
         if art_date_str and art_date_str not in target_dates:
             print(f"  -> Skipped (date: {art_date_str}, not in target range)")
             stats['skipped'] += 1
