@@ -139,34 +139,44 @@ def _match_category(text_lower: str) -> str:
 
 def _llm_classify_batch(articles_info):
     """Use LLM to classify a batch of articles into 5 weekly categories.
-    articles_info: list of (title + short content summary) strings
+
+    articles_info: list of (title + content excerpt) strings.
+    Each item should provide enough context: title + first 400 chars of content.
     """
-    text_list = '\n'.join(f'{i+1}. {t[:200]}' for i, t in enumerate(articles_info))
+    text_list = '\n'.join(
+        f'{i+1}. {info[:400]}' for i, info in enumerate(articles_info)
+    )
     prompt = f"""将以下量子科技新闻分类到五大类别之一。
 
-优先级规则：资本运作 > 企业资讯 > 产品动态 > 科技前沿 > 宏观态势。即如果一条新闻同时涉及投资和技术，优先归为资本运作。
+优先级规则：资本运作 > 企业资讯 > 产品动态 > 科技前沿 > 宏观态势。
 
-- 资本运作：融投资、收购、IPO、财报估值、政府资助拨款。触发词：获X万/X亿资助/拨款/投资/融资、估值、财报、营收、A轮/B轮
-- 产品动态：新产品/芯片/系统发布、技术商用、性能指标突破。触发词：推出、发布、上市、量产、部署
-- 企业资讯：合作签约、人事任命、高管变动、战略联盟。触发词：合作、任命、签约、加盟、携手、扩建、首席XX官
-- 科技前沿：学术论文发表、科研实验突破、arXiv预印本、新理论研究。触发词：发表、发现、突破、arXiv、论文、研究
-- 宏观态势：政策法规、行业路线图、市场报告、人才教育、国际竞争。触发词：路线图、白皮书、政策、趋势、报告
+- 资本运作：融投资、收购、IPO、财报估值、政府资助拨款。关键词：获X万/X亿资助/拨款/投资/融资、估值、财报、营收、A轮/B轮、收购、上市
+- 产品动态：新产品/芯片/系统发布、技术商用、性能指标突破。关键词：推出、发布、上市、量产、部署、发布
+- 企业资讯：合作签约、人事任命、高管变动、战略联盟。关键词：合作、任命、签约、加盟、携手、扩建、首席、CEO/CTO
+- 科技前沿：学术论文发表、科研实验突破、arXiv预印本、新理论研究。关键词：发表、发现、突破、arXiv、论文、研究、实验
+- 宏观态势：政策法规、行业路线图、市场报告、人才教育、国际竞争。关键词：路线图、白皮书、政策、趋势、报告、标准
 
-每条新闻标题后附有正文摘要（| 分隔）。每篇只输出一个类别。输出格式：编号:类别
+注意：
+- ArXiv预印本论文 → 科技前沿（不是宏观态势）
+- 政府资助/拨款给公司 → 资本运作（不是宏观态势）
+- 公司合作/人事 → 企业资讯
+- 产品发布/性能提升 → 产品动态
+
+每条新闻标题后附有正文前400字（| 分隔）。每篇只输出一个类别。输出格式：编号:类别
 
 {text_list}
 
 输出："""
 
     try:
-        import json, yaml
+        import yaml
         cfg = yaml.safe_load(open('D:/Claude_code/rag_system/config.yaml', encoding='utf-8'))
         llm_cfg = cfg['llm']
         sys.path.insert(0, 'D:/Claude_code/rag_system/rag_system')
         from llm_client import LLMClient
         client = LLMClient(provider='openai', api_key=llm_cfg['api_key'],
                           api_base=llm_cfg['api_base'], model=llm_cfg['model'],
-                          max_tokens=512, timeout=60)
+                          max_tokens=512, timeout=120)
         response = client.chat([{'role': 'user', 'content': prompt}])
         # Parse response: "1:资本运作\n2:企业资讯\n..."
         results = {}
@@ -920,17 +930,17 @@ def main():
 
     stats = {'inserted': 0, 'updated': 0, 'skipped': 0, 'errors': 0}
 
+    # ── Phase 1: Fetch all details + keyword tags ──
+    pending = []  # list of dicts with all info needed for insert
     for i, art in enumerate(articles, 1):
         print(f"\n[{i}/{len(articles)}] {art['title'][:60].encode('gbk', errors='replace').decode('gbk', errors='replace')}")
 
-        # Fetch detail
         detail = fetch_article_detail(art['url'], cookies)
         if detail['title'] == 'ERROR':
             print(f"  -> ERROR: {detail['content'][:100]}")
             stats['errors'] += 1
             continue
 
-        # Use detail page date if available, otherwise fall back to listing date
         art_date = detail['liangke_date']
         if art_date:
             art_date_str = art_date.strftime('%Y-%m-%d')
@@ -940,9 +950,10 @@ def main():
         if art_date_str and art_date_str not in target_dates:
             print(f"  -> Skipped (date: {art_date_str}, not in target range)")
             stats['skipped'] += 1
+            _polite_delay()
             continue
 
-        # Extract original date from reference link (串行，礼貌延迟)
+        # Extract original date from reference link
         ref_url = ''
         ref_title = ''
         original_date = None
@@ -951,101 +962,112 @@ def main():
         if detail['primary_reference']:
             ref_url = detail['primary_reference']['url']
             ref_title = detail['primary_reference']['text']
-            print(f"  -> Extracting original date from: {ref_url[:80]}")
+            print(f"  -> Ref: {ref_url[:80]}")
             original_date = get_original_date(ref_url)
             if original_date:
                 print(f"  -> Original date: {original_date}")
-            else:
-                print(f"  -> Original date extraction failed, leaving null")
             try:
                 source_domain = urlparse(ref_url).netloc
             except Exception:
                 pass
-            time.sleep(0.3)  # polite delay between reference fetches
+            time.sleep(0.3)
         else:
             original_date = None
 
-        # Deduplication check
+        # Dedup check
         exists = article_exists(ref_url, detail['url'])
+        if exists:
+            print(f"  -> SKIP (exists in DB)")
+            stats['skipped'] += 1
+            _polite_delay()
+            continue
 
-        # Semantic dedup: check if similar title already exists today
-        if not exists and detail['title']:
+        if detail['title']:
             similar = find_similar_article(detail['title'], today)
             if similar:
-                print(f"  -> DUPLICATE (similar to id={similar['id']}: {similar['title'][:50]})")
+                print(f"  -> DUPLICATE (similar to id={similar['id']})")
                 stats['skipped'] += 1
+                _polite_delay()
                 continue
 
-        # Auto-tag
-        tags = auto_tag(detail['title'], detail['content'])
-        if tags:
-            weekly = tags.get('weekly', [])
-            search = tags.get('search_tags', [])
-            print(f"  -> 周报: {', '.join(weekly)} | 检索: {', '.join(search[:5])}")
+        # Keyword tag (temporary, will be overridden by LLM)
+        kw_tags = auto_tag(detail['title'], detail['content'])
+        weekly_kw = kw_tags.get('weekly', ['宏观态势']) if kw_tags else ['宏观态势']
 
-        # Determine page_type from URL
+        # Page type
         page_type = ''
         if '/flash/' in art['url']: page_type = 'flash'
         elif '/reference/' in art['url']: page_type = 'reference'
         elif '/article/' in art['url']: page_type = 'article'
 
+        print(f"  KW tag: {weekly_kw[0] if weekly_kw else '?'} | type: {page_type} | {len(detail['content'])}c")
+
+        pending.append({
+            'detail': detail,
+            'ref_url': ref_url,
+            'ref_title': ref_title,
+            'original_date': original_date,
+            'source_domain': source_domain,
+            'kw_tags': kw_tags,
+            'page_type': page_type,
+            'art_date_str': art_date_str,
+        })
+
+        _polite_delay()
+
+    # ── Phase 2: LLM batch classify ──
+    llm_cats = {}
+    if pending:
+        print(f"\n--- LLM classifying {len(pending)} articles ---")
+        # Give LLM more context: title + first 400 chars of content
+        info_list = [
+            f"{p['detail']['title'][:120]} | {((p['detail']['content'] or '')[:300]).strip()}"
+            for p in pending
+        ]
+        llm_results = _llm_classify_batch(info_list)
+        if llm_results:
+            for idx, cat in llm_results.items():
+                if idx < len(pending):
+                    llm_cats[idx] = cat
+                    old_cat = pending[idx]['kw_tags'].get('weekly', ['?'])[0] if pending[idx]['kw_tags'] else '?'
+                    title_short = pending[idx]['detail']['title'][:60]
+                    print(f"  [{idx+1}] {old_cat} -> {cat} | {title_short}")
+        else:
+            print("  LLM classify returned empty, using keyword tags as fallback")
+
+    # ── Phase 3: Insert into DB with LLM tags ──
+    if pending:
+        print(f"\n--- Inserting {len(pending)} articles ---")
+    for idx, p in enumerate(pending):
+        # Override weekly tag with LLM result
+        final_tags = p['kw_tags'] or {}
+        if idx in llm_cats:
+            if isinstance(final_tags, dict):
+                final_tags['weekly'] = [llm_cats[idx]]
+            else:
+                final_tags = {'weekly': [llm_cats[idx]], 'search_tags': [], 'knowledge_graph': {}}
+
         try:
             result = insert_or_update_article(
-                reference_url=ref_url,
-                liangke_url=detail['url'],
-                title=detail['title'],
-                content=detail['content'],
-                original_date=original_date,
-                liangke_date=detail['liangke_date'] or datetime.strptime(today, '%Y-%m-%d').date(),
-                source_domain=source_domain,
-                reference_title=ref_title,
-                tags=tags,
-                page_type=page_type
+                reference_url=p['ref_url'],
+                liangke_url=p['detail']['url'],
+                title=p['detail']['title'],
+                content=p['detail']['content'],
+                original_date=p['original_date'],
+                liangke_date=p['detail']['liangke_date'] or datetime.strptime(today, '%Y-%m-%d').date(),
+                source_domain=p['source_domain'],
+                reference_title=p['ref_title'],
+                tags=final_tags,
+                page_type=p['page_type']
             )
 
             if result['action'] == 'inserted':
-                print(f"  -> INSERTED (id={result['id']})")
                 stats['inserted'] += 1
             else:
-                print(f"  -> UPDATED (id={result['id']}, count={result['fetch_count']})")
                 stats['updated'] += 1
-
         except Exception as e:
             print(f"  -> DB ERROR: {e}")
             stats['errors'] += 1
-
-        _polite_delay()  # anti-scraping: random delay between detail pages
-
-    # LLM re-classification: improve 5-category tags for today's articles
-    from db import get_session, Article
-    session = get_session()
-    try:
-        today_arts = session.query(Article).filter(Article.liangke_date == today).all()
-        if today_arts:
-            # Include content summary for better context
-            items = [(a.id, f'{a.title[:120]} | {((a.content or "")[:100]).strip()}') for a in today_arts]
-            llm_results = _llm_classify_batch([t for _, t in items])
-            if llm_results:
-                reclassified = 0
-                for idx, cat in llm_results.items():
-                    if idx < len(items):
-                        art_id = items[idx][0]
-                        art = next((a for a in today_arts if a.id == art_id), None)
-                        if art:
-                            tags = art.tags
-                            if isinstance(tags, str):
-                                import json
-                                tags = json.loads(tags)
-                            if isinstance(tags, dict):
-                                tags['weekly'] = [cat]
-                                art.tags = tags
-                                reclassified += 1
-                session.commit()
-                print(f'  LLM reclassified:  {reclassified} articles')
-    except Exception as e:
-        print(f'  LLM reclassify failed: {e}')
-    finally:
-        session.close()
 
     total = get_article_count()
     print(f"\n{'='*50}")
