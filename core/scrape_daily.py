@@ -3,6 +3,7 @@
 """
 import sys
 import requests
+from category_scorer import get_scorer  # unified dictionary-based classifier
 from bs4 import BeautifulSoup
 import pickle
 import time
@@ -328,18 +329,22 @@ arXiv论文 → 科技前沿 | 企业回应辟谣 → 企业资讯 | 公司产�
 
 
 def auto_tag(title: str, content: str) -> list:
-    """Project-based auto-tagging using unified tagger.
+    """Project-based auto-tagging using unified tagger + dictionary scorer.
     Returns project-based tags dict as JSON string.
     """
     sys.path.insert(0, 'D:/Claude_code/knowledge_graph')
     from core.tagger import tag_article
     result = tag_article(title, content, '')
-    # Also include old 5-category from local keyword matching
-    text = (title or '') + ' ' + (content or '')[:2000]
-    text_lower = text.lower()
-    old_cat = _match_category(text_lower)
-    if old_cat not in result['weekly']:
-        result['weekly'].append(old_cat)
+    # Use dictionary scorer as primary, keyword matching as fallback
+    scorer = get_scorer()
+    tag = scorer.classify(title, content)
+    if not tag:
+        # Fallback to keyword matching
+        text = (title or '') + ' ' + (content or '')[:2000]
+        text_lower = text.lower()
+        tag = _match_category(text_lower)
+    if tag and tag not in result['weekly']:
+        result['weekly'].append(tag)
     return result
 
 
@@ -1158,25 +1163,26 @@ def main():
 
         _polite_delay()
 
-    # ── Phase 2: Hard classify + LLM for uncertain cases ──
-    hard_cats = {}   # idx -> category (deterministic)
+    # ── Phase 2: Dictionary scorer + LLM for uncertain cases ──
+    hard_cats = {}   # idx -> category (dictionary scorer)
     llm_cats = {}    # idx -> category (LLM)
     if pending:
-        # Step 1: Deterministic pre-filter
+        scorer = get_scorer()
+        # Step 1: Dictionary-based classification (strong_signals + weighted scoring)
         for idx, p in enumerate(pending):
             title = p['detail']['title']
             content = p['detail']['content'] or ''
-            hard = _hard_classify(title, content)
-            if hard:
-                hard_cats[idx] = hard
+            result = scorer.classify(title, content)
+            if result:
+                hard_cats[idx] = result
                 kw_cat = p['kw_tags'].get('weekly', ['?'])[0] if p['kw_tags'] else '?'
-                print(f"  [{idx+1}] HARD: {kw_cat} -> {hard} | {title[:60]}")
+                print(f"  [{idx+1}] DICT: {kw_cat} -> {result} | {title[:60]}")
 
         hard_count = len(hard_cats)
         uncertain_count = len(pending) - hard_count
-        print(f"\n--- Hard classify: {hard_count} determined, {uncertain_count} → LLM ---")
+        print(f"\n--- Dictionary: {hard_count} determined, {uncertain_count} → LLM ---")
 
-        # Step 2: LLM for uncertain cases only (batched, max 10 per batch)
+        # Step 2: LLM for uncertain cases (batched, max 10 per batch)
         if uncertain_count > 0:
             uncertain_indices = [i for i in range(len(pending)) if i not in hard_cats]
             BATCH_SIZE = 10
