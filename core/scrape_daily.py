@@ -1176,23 +1176,27 @@ def main():
         uncertain_count = len(pending) - hard_count
         print(f"\n--- Hard classify: {hard_count} determined, {uncertain_count} → LLM ---")
 
-        # Step 2: LLM for uncertain cases only
+        # Step 2: LLM for uncertain cases only (batched, max 10 per batch)
         if uncertain_count > 0:
             uncertain_indices = [i for i in range(len(pending)) if i not in hard_cats]
-            info_list = [
-                f"{pending[i]['detail']['title'][:120]} | {((pending[i]['detail']['content'] or '')[:300]).strip()}"
-                for i in uncertain_indices
-            ]
-            llm_results = _llm_classify_batch(info_list)
-            if llm_results:
-                for orig_idx, llm_idx in enumerate(uncertain_indices):
-                    if orig_idx in llm_results:
-                        llm_cats[llm_idx] = llm_results[orig_idx]
-                        old_cat = pending[llm_idx]['kw_tags'].get('weekly', ['?'])[0] if pending[llm_idx]['kw_tags'] else '?'
-                        title_short = pending[llm_idx]['detail']['title'][:60]
-                        print(f"  [{llm_idx+1}] LLM: {old_cat} -> {llm_results[orig_idx]} | {title_short}")
-            else:
-                print("  LLM classify returned empty, using keyword tags as fallback")
+            BATCH_SIZE = 10
+            for batch_start in range(0, len(uncertain_indices), BATCH_SIZE):
+                batch_indices = uncertain_indices[batch_start:batch_start + BATCH_SIZE]
+                info_list = [
+                    f"{pending[i]['detail']['title'][:120]} | {((pending[i]['detail']['content'] or '')[:300]).strip()}"
+                    for i in batch_indices
+                ]
+                llm_results = _llm_classify_batch(info_list)
+                if llm_results:
+                    for local_idx, cat in llm_results.items():
+                        if local_idx < len(batch_indices):
+                            orig_idx = batch_indices[local_idx]
+                            llm_cats[orig_idx] = cat
+                            old_cat = pending[orig_idx]['kw_tags'].get('weekly', ['?'])[0] if pending[orig_idx]['kw_tags'] else '?'
+                            title_short = pending[orig_idx]['detail']['title'][:60]
+                            print(f"  [{orig_idx+1}] LLM: {old_cat} -> {cat} | {title_short}")
+                else:
+                    print(f"  LLM batch {batch_start//BATCH_SIZE+1} returned empty, using keyword tags as fallback")
 
     # Merge hard + LLM results
     all_cats = {**hard_cats, **llm_cats}  # hard wins if somehow both exist
