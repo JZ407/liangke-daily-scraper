@@ -30,12 +30,16 @@ class CategoryScorer:
         self._cat_order = sorted(self.categories.keys(),
                                  key=lambda c: self.categories[c].get('priority', 99))
 
-    def classify(self, title: str, content: str = '') -> Optional[str]:
+    def classify(self, title: str, content: str = '', reference_url: str = '') -> Optional[str]:
         """Classify an article. Returns category name or None if uncertain."""
         title = title or ''
         content = content or ''
         title_lower = title.lower()
         text_lower = title_lower + ' ' + (content[:500] or '').lower()
+
+        # Phase 0: arXiv URL → force 科技前沿
+        if reference_url and 'arxiv.org' in reference_url.lower():
+            return '科技前沿'
 
         # Phase 1: Strong signals (short-circuit)
         for cat, cfg in self.categories.items():

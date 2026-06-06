@@ -328,7 +328,7 @@ arXiv论文 → 科技前沿 | 企业回应辟谣 → 企业资讯 | 公司产�
         return {}
 
 
-def auto_tag(title: str, content: str) -> list:
+def auto_tag(title: str, content: str, reference_url: str = '') -> list:
     """Project-based auto-tagging using unified tagger + dictionary scorer.
     Returns project-based tags dict as JSON string.
     """
@@ -337,7 +337,7 @@ def auto_tag(title: str, content: str) -> list:
     result = tag_article(title, content, '')
     # Use dictionary scorer as primary, keyword matching as fallback
     scorer = get_scorer()
-    tag = scorer.classify(title, content)
+    tag = scorer.classify(title, content, reference_url)
     if not tag:
         # Fallback to keyword matching
         text = (title or '') + ' ' + (content or '')[:2000]
@@ -1139,7 +1139,7 @@ def main():
                 continue
 
         # Keyword tag (temporary, will be overridden by LLM)
-        kw_tags = auto_tag(detail['title'], detail['content'])
+        kw_tags = auto_tag(detail['title'], detail['content'], ref_url)
         weekly_kw = kw_tags.get('weekly', ['宏观态势']) if kw_tags else ['宏观态势']
 
         # Page type
@@ -1172,7 +1172,7 @@ def main():
         for idx, p in enumerate(pending):
             title = p['detail']['title']
             content = p['detail']['content'] or ''
-            result = scorer.classify(title, content)
+            result = scorer.classify(title, content, p.get('ref_url', ''))
             if result:
                 hard_cats[idx] = result
                 kw_cat = p['kw_tags'].get('weekly', ['?'])[0] if p['kw_tags'] else '?'
