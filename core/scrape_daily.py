@@ -83,7 +83,7 @@ CATEGORY_KEYWORDS = {
         'debt', 'credit', 'capital raise', 'capital raising',
     ],
     '产品动态': [
-        '产品', '发布', '推出', '上市', '芯片', '处理器', '计算机',
+        '产品', '发布', '推出', '新品上市', '产品上市', '芯片', '处理器', '计算机',
         '量子计算机', '量子芯片', '量子处理器', '原型机', '样机',
         '系统', '平台', '软件', '工具', 'sdk', 'api', '云服务',
         '升级', '迭代', '性能', '指标', '保真度', '相干时间',
@@ -133,8 +133,99 @@ def _match_category(text_lower: str) -> str:
     if max(scores.values()) == 0:
         return '宏观态势'
 
-    best_tag = max(CATEGORY_PRIORITY, key=lambda t: (scores[t], CATEGORY_PRIORITY.index(t)))
+    # Higher score wins; on tie, lower priority index (higher priority) wins
+    best_tag = max(CATEGORY_PRIORITY, key=lambda t: (scores[t], -CATEGORY_PRIORITY.index(t)))
     return best_tag
+
+
+def _hard_classify(title: str, content: str = '') -> str | None:
+    """确定性规则分类。明确案例直接返回类别，歧义案例返回 None 交给 LLM。
+
+    设计原则：宁可漏过（返回 None）也不误判。只拦截极高置信度的模式。
+    检查顺序：标题人事 > 标题融资 > 其他 > 正文融资 > 正文人事
+    标题级优先于正文级，避免正文背景信息（如"担任财务顾问"）干扰标题核心判断。
+    """
+    text = (title or '') + ' ' + ((content or '')[:200])
+
+    # ═══════════════════════════════════════════════════════════
+    # Step 1: 标题级检查（高置信度，标题体现核心新闻）
+    # ═══════════════════════════════════════════════════════════
+
+    # 1a. 人事任命（标题）
+    if re.search(r'(任命|出任|担任|加盟|加入|晋升|擢升|提升|擢升为).{0,10}'
+                 r'(CEO|CTO|CFO|COO|总裁|首席|总经理|董事长|副总裁|总监|合伙人)', title):
+        return '企业资讯'
+    if re.search(r'(离职|辞任|卸任|退休|离开).{0,10}'
+                 r'(CEO|CTO|总裁|首席|创始人)', title):
+        return '企业资讯'
+
+    # 1b. 融资轮次（标题）: "完成C轮融资" / "获天使轮融资" / "A轮/B轮/种子轮"
+    if re.search(r'(完成|获|获得|宣布|签署|达成).{0,15}'
+                 r'(轮融资|元融资|美元融资|欧元融资)', title):
+        return '资本运作'
+    if re.search(r'(天使轮|种子轮|A轮|B轮|C轮|D轮|Pre-IPO)', title):
+        return '资本运作'
+    if re.search(r'(完成|获|获得|宣布|签署|达成).{0,10}融资', title):
+        return '资本运作'
+
+    # 1c. IPO/SPAC（标题）: "拟借壳上市" / "提交上市申请"
+    if re.search(r'(拟|计划|已|正式|宣布|完成|提交).{0,10}'
+                 r'(借壳上市|IPO上市|SPAC|上市申请)', title):
+        return '资本运作'
+
+    # 1d. 收购并购（标题）
+    if re.search(r'(收购|并购|合并|控股|注资|参股).{0,10}'
+                 r'(公司|企业|正式|完成|宣布|交易|旗下)', title):
+        return '资本运作'
+
+    # ═══════════════════════════════════════════════════════════
+    # Step 2: 正文级检查（标题不明确时从正文补充）
+    # ═══════════════════════════════════════════════════════════
+
+    # 2a. 融资轮次（正文）: SPAC / 战略融资/投资（需动作词） / 政府拨款 / 估值
+    if re.search(r'SPAC', text, re.IGNORECASE) and \
+       re.search(r'(公司|企业|关注|合并|收购|上市)', text):
+        return '资本运作'
+    if re.search(r'(拟|计划|已|正式|宣布|完成|提交|受到).{0,10}'
+                 r'(借壳上市|IPO上市|SPAC|上市申请)', text):
+        return '资本运作'
+    if re.search(r'(完成|获|获得|宣布|签署|达成|进行|新一轮).{0,10}'
+                 r'(战略融资|战略投资)', text):
+        return '资本运作'
+    # 收购并购（正文）
+    if re.search(r'(收购|并购|合并|控股|注资|参股).{0,10}'
+                 r'(公司|企业|正式|完成|宣布|交易|旗下)', text):
+        return '资本运作'
+    # 估值
+    if re.search(r'(估值|市值).{0,10}(亿|万|美元|欧元)', text):
+        return '资本运作'
+    # 政府/机构给企业拨款
+    if re.search(r'(政府|商务部|能源部|国防部|DOE|DARPA).{0,30}'
+                 r'(拨款|资助|补贴|投资|资金支持)', text) and \
+       re.search(r'\d+\s*(亿|万|美元|欧元)', text):
+        return '资本运作'
+
+    # 2b. 宏观态势（国家政策）
+    if re.search(r'(国家|国务院|科技部|工信部|欧盟|白宫)'
+                 r'.{0,10}(发布|出台|推出|宣布|启动|实施).{0,10}'
+                 r'(政策|战略|规划|计划|法案|法规|路线图|倡议)', text):
+        return '宏观态势'
+
+    # 2c. 科技前沿（学术渠道）
+    if re.search(r'(Nature|PRL|Physical Review|arXiv|预印本|《自然》|《科学》|Nat\.|Phys\. Rev\.)', text):
+        return '科技前沿'
+    if re.search(r'Science\s*(?:杂志|期刊|论文|发表|Advances|Bulletin|Robotics)', text, re.IGNORECASE):
+        return '科技前沿'
+
+    # 2d. 人事任命（正文回退 — 只在标题没有融资信号时才到这一步）
+    if re.search(r'(任命|出任|担任|加盟|加入|晋升|擢升|提升|擢升为).{0,10}'
+                 r'(CEO|CTO|CFO|COO|总裁|首席|总经理|董事长|副总裁|总监|合伙人)', text):
+        return '企业资讯'
+    if re.search(r'(离职|辞任|卸任|退休|离开)', text) and \
+       re.search(r'(CEO|CTO|总裁|首席|创始人)', text):
+        return '企业资讯'
+
+    return None  # 无法确定，交给 LLM
 
 
 def _llm_classify_batch(articles_info):
@@ -151,11 +242,21 @@ def _llm_classify_batch(articles_info):
 ==== 判定优先级（严格按此顺序，多标签冲突时唯一归类）====
 资本运作 > 科技前沿 > 产品动态 > 企业资讯 > 宏观态势
 
+==== ⚠️ 融资标题绝对优先规则（最高优先级，覆盖所有其他规则）====
+当标题的核心事件是融资/投资/IPO/SPAC/估值/收购时，不论正文提到资金用途（商业化/产业化/规模化/建厂/研发等），一律归资本运作。
+关键词触发：完成X轮融资、获XX美元/欧元/人民币融资、拟借壳上市、SPAC合并、提交IPO申请、估值达、收购XX公司、获XX政府拨款/资助（给具体企业）
+即使标题同时出现"加速商业化""推进产业化""用于产品研发"等词，只要融资是标题核心信息→资本运作。
+
+==== "上市"二字的歧义消解 ====
+"借壳上市""SPAC上市""IPO上市""公司上市""提交上市申请"→ 资本运作
+"产品上市""新品上市""正式上市销售"→ 产品动态
+看主语：主语是公司→资本运作；主语是产品→产品动态。
+
 ==== 分类定义 ====
 
 1. 资本运作 —— 钱和所有权的流动
-   【属于】企业融资（A/B/C轮、IPO等）、收购并购、财报营收估值、政府资助/拨款/补贴给具体企业、企业重大资本支出（建厂、百亿投资，且资金是标题核心信息）
-   【不属于】政府面向全行业的资助计划→宏观态势 | 政府资助大学/研究机构→宏观态势或科技前沿 | 资金只是背景信息的技术/产品/合作新闻→按内容本质归类
+   【属于】企业融资（天使/种子/A/B/C轮、战略投资等）、IPO/借壳上市/SPAC合并、收购并购、财报营收估值、政府资助/拨款/补贴给具体企业（如"美国商务部给IBM XX亿美元"）、企业重大资本支出（百亿级投资建厂，金额是标题核心信息）
+   【不属于】政府面向全行业的资助计划→宏观态势 | 政府资助大学/研究机构→宏观态势或科技前沿 | 资金只是背景信息的技术/产品/合作新闻→按内容本质归类 | 注意：不要因为正文提到"用于产品开发/商业化"就把融资新闻错分为产品动态
 
 2. 科技前沿 —— 知识层面的推进，不涉及商业产品
    【属于】学术论文（Nature/Science/PRL/arXiv预印本）、实验突破/新物理现象、新算法/新理论、学术会议成果、学术渠道发布的开源工具
@@ -163,7 +264,7 @@ def _llm_classify_batch(articles_info):
 
 3. 产品动态 —— 能买能用能部署的东西
    【属于】新芯片/整机/软件/云服务正式发布可用、通过商业渠道宣布的性能突破（产品发布会、公司新闻稿、官网博客）、商用落地/量产/客户部署/云平台上线、产品认证获批、公司具体产品路线图（含时间节点/性能目标）
-   【不属于】论文中报告的性能指标→科技前沿 | 实验室原型机未开放→科技前沿 | 纯理论算法→科技前沿 | 通过arXiv/Nature等学术渠道发布的成果→科技前沿
+   【不属于】论文中报告的性能指标→科技前沿 | 实验室原型机未开放→科技前沿 | 纯理论算法→科技前沿 | 通过arXiv/Nature等学术渠道发布的成果→科技前沿 | 融资/投资新闻（即使提到产品）→资本运作
 
 4. 企业资讯 —— 公司组织层面的变化
    【属于】高管任命（CEO/CTO/VP等，一律归此）、战略合作签约/MoU/联盟加入（无具体成果产出）、办公室/研发中心扩建裁员、公司战略愿景品牌重塑、企业回应辟谣公关声明法律诉讼
@@ -175,6 +276,7 @@ def _llm_classify_batch(articles_info):
 
 ==== 关键边界规则 ====
 - 资金核心原则：只有资金数额/融资轮次/估值/所有权变更是新闻核心时才归资本运作，否则按内容本质归类
+- ⚠️ 融资不要被"用途"带偏：标题说"融资X亿用于产品研发/商业化"→仍然是资本运作，因为融资是核心事件
 - 政府资助分流：给企业→资本运作；给大学/研究机构→宏观态势（强调产业布局）或科技前沿（强调具体科研）
 - 人事变动：无论技术还是管理岗位，一律企业资讯
 - 发布渠道优先：arXiv/Nature/Science等学术渠道→科技前沿；PR/公司新闻室→产品动态
@@ -182,10 +284,17 @@ def _llm_classify_batch(articles_info):
 - 合作区分：签合作协议/MoU（无成果产出）→企业资讯；合作发表论文/研发成功→科技前沿
 
 ==== 速查对照 ====
-企业获融资 → 资本运作 | 企业发新芯片（含型号） → 产品动态 | 企业任命CTO → 企业资讯
-Nature论文 → 科技前沿 | 国家量子五年规划 → 宏观态势 | 政府拨款IBM建厂 → 资本运作
-政府拨款大学建实验室 → 宏观态势 | 公司大学签MoU → 企业资讯 | 公司大学联合发表论文 → 科技前沿
+企业获融资（A/B/C轮） → 资本运作 | 企业IPO/SPAC/借壳上市 → 资本运作 | 企业发新芯片（含型号） → 产品动态
+政府拨款给具体企业 → 资本运作 | 政府拨款给大学 → 宏观态势 | 企业任命CTO → 企业资讯
+Nature论文 → 科技前沿 | 国家量子五年规划 → 宏观态势 | 企业获融资用于商业化 → 仍是资本运作
 arXiv论文 → 科技前沿 | 企业回应辟谣 → 企业资讯 | 公司产品路线图（含时间/指标） → 产品动态
+公司被收购/并购 → 资本运作 | 企业财报/估值 → 资本运作 | 公司大学联合发表论文 → 科技前沿
+
+==== 常见错分陷阱（务必避免）====
+❌ "XX完成A轮融资，加速产品商业化" → 错分为产品动态 | ✅ 应为资本运作（融资是核心事件）
+❌ "XX拟借壳上市" → 错分为产品动态（误以为产品上市）| ✅ 应为资本运作（公司IPO）
+❌ "XX获政府XX亿美元建厂" → 错分为产品动态 | ✅ 应为资本运作（政府资助企业）
+❌ "XX获XX亿美元估值" → 错分为企业资讯 | ✅ 应为资本运作（估值/融资相关）
 
 每条新闻标题后附有正文前400字（| 分隔）。每篇只输出一个类别。输出格式：编号:类别
 
@@ -1049,37 +1158,56 @@ def main():
 
         _polite_delay()
 
-    # ── Phase 2: LLM batch classify ──
-    llm_cats = {}
+    # ── Phase 2: Hard classify + LLM for uncertain cases ──
+    hard_cats = {}   # idx -> category (deterministic)
+    llm_cats = {}    # idx -> category (LLM)
     if pending:
-        print(f"\n--- LLM classifying {len(pending)} articles ---")
-        # Give LLM more context: title + first 400 chars of content
-        info_list = [
-            f"{p['detail']['title'][:120]} | {((p['detail']['content'] or '')[:300]).strip()}"
-            for p in pending
-        ]
-        llm_results = _llm_classify_batch(info_list)
-        if llm_results:
-            for idx, cat in llm_results.items():
-                if idx < len(pending):
-                    llm_cats[idx] = cat
-                    old_cat = pending[idx]['kw_tags'].get('weekly', ['?'])[0] if pending[idx]['kw_tags'] else '?'
-                    title_short = pending[idx]['detail']['title'][:60]
-                    print(f"  [{idx+1}] {old_cat} -> {cat} | {title_short}")
-        else:
-            print("  LLM classify returned empty, using keyword tags as fallback")
+        # Step 1: Deterministic pre-filter
+        for idx, p in enumerate(pending):
+            title = p['detail']['title']
+            content = p['detail']['content'] or ''
+            hard = _hard_classify(title, content)
+            if hard:
+                hard_cats[idx] = hard
+                kw_cat = p['kw_tags'].get('weekly', ['?'])[0] if p['kw_tags'] else '?'
+                print(f"  [{idx+1}] HARD: {kw_cat} -> {hard} | {title[:60]}")
+
+        hard_count = len(hard_cats)
+        uncertain_count = len(pending) - hard_count
+        print(f"\n--- Hard classify: {hard_count} determined, {uncertain_count} → LLM ---")
+
+        # Step 2: LLM for uncertain cases only
+        if uncertain_count > 0:
+            uncertain_indices = [i for i in range(len(pending)) if i not in hard_cats]
+            info_list = [
+                f"{pending[i]['detail']['title'][:120]} | {((pending[i]['detail']['content'] or '')[:300]).strip()}"
+                for i in uncertain_indices
+            ]
+            llm_results = _llm_classify_batch(info_list)
+            if llm_results:
+                for orig_idx, llm_idx in enumerate(uncertain_indices):
+                    if orig_idx in llm_results:
+                        llm_cats[llm_idx] = llm_results[orig_idx]
+                        old_cat = pending[llm_idx]['kw_tags'].get('weekly', ['?'])[0] if pending[llm_idx]['kw_tags'] else '?'
+                        title_short = pending[llm_idx]['detail']['title'][:60]
+                        print(f"  [{llm_idx+1}] LLM: {old_cat} -> {llm_results[orig_idx]} | {title_short}")
+            else:
+                print("  LLM classify returned empty, using keyword tags as fallback")
+
+    # Merge hard + LLM results
+    all_cats = {**hard_cats, **llm_cats}  # hard wins if somehow both exist
 
     # ── Phase 3: Insert into DB with LLM tags ──
     if pending:
         print(f"\n--- Inserting {len(pending)} articles ---")
     for idx, p in enumerate(pending):
-        # Override weekly tag with LLM result
+        # Override weekly tag with hard/LLM result
         final_tags = p['kw_tags'] or {}
-        if idx in llm_cats:
+        if idx in all_cats:
             if isinstance(final_tags, dict):
-                final_tags['weekly'] = [llm_cats[idx]]
+                final_tags['weekly'] = [all_cats[idx]]
             else:
-                final_tags = {'weekly': [llm_cats[idx]], 'search_tags': [], 'knowledge_graph': {}}
+                final_tags = {'weekly': [all_cats[idx]], 'search_tags': [], 'knowledge_graph': {}}
 
         try:
             result = insert_or_update_article(
