@@ -209,8 +209,10 @@ def main():
 
     # Search
     queries = (
-        [f'\"{c}\" 融资' for c in KNOWN_COMPANIES] +  # 精确匹配公司名
-        ['\"量子\" \"融资\"', '\"量子\" \"投资\"', '\"量子\" \"天使轮\"'] +
+        [f'\"{c}\" 融资' for c in KNOWN_COMPANIES] +        # 精确匹配公司名
+        [f'\"{a}\" 融资' for a in PRIORITY_ACCOUNTS] +      # 精确搜索优先公众号
+        [f'\"{a}\" 投资' for a in PRIORITY_ACCOUNTS] +      # 搭配不同关键词
+        ['\"量子\" \"融资\"', '\"量子\" \"天使轮\"'] +
         DISCOVERY_QUERIES[:2]
     )
     all_articles = []
