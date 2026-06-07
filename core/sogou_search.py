@@ -19,26 +19,37 @@ HEADERS = {
     'Referer': 'https://weixin.sogou.com/',
 }
 
-# 重点关注的量子行业微信公众号
-PRIORITY_ACCOUNTS = ['量子大观', '量子客', '光子盒', '量子之声', '量子前哨']
+# ══════════════════════════════════════════
+# 搜索策略: 1/2/3 类 × A/B 类关键词
+# ══════════════════════════════════════════
 
-KNOWN_COMPANIES = [
+# 1. 量子行业公众号
+GROUP1_ACCOUNTS = [
+    '量子大观', '量子客', '光子盒', '量子之声', '量子前哨', '量子风云',
+]
+
+# 2. 量子行业公司
+GROUP2_COMPANIES = [
     '本源量子', '国盾量子', '国仪量子', '玻色量子', '图灵量子',
     '量旋科技', '中科酷原', '启科量子', '华翊量子', '弧光量子',
     '不筹量子', '太一量生', '微观纪元', '矩量光启', '原子矩阵',
     '问天量子', '正则量子', '量坤科技', '相干科技', '幺正量子',
-    '逻辑比特', '无问清芯',
+    '逻辑比特', '无问清芯', '未磁科技',
 ]
 
-DISCOVERY_QUERIES = [
-    '"量子计算" "天使轮" 亿元',
-    '"量子计算" "A轮" 亿元',
-    '"量子计算" "Pre-A" 融资',
-    '"量子计算" "数千万" 融资',
+# 3. 投融资相关公众号
+GROUP3_ACCOUNTS = [
+    '央企投资协会',
 ]
 
-# Only keep articles from last N days
-MAX_AGE_DAYS = 7
+# A. 投融资关键词
+KEYWORDS_A = ['融资', '投资', '天使轮', 'A轮', 'B轮', 'C轮', 'IPO', '估值', '收购', '战略投资', 'Pre-A', 'Pre-IPO']
+
+# B. 量子行业关键词
+KEYWORDS_B = ['量子计算', '量子通信', '量子传感', '量子科技', '量子芯片', '量子比特', '量子纠错']
+
+# Only keep today's articles
+MAX_AGE_DAYS = 1
 
 # Macro keywords to skip
 MACRO_KEYWORDS = [
@@ -178,7 +189,7 @@ def extract_round(text):
 def extract_company(title, summary=''):
     """Extract company name from title+summary for dedup."""
     text = (title or '') + ' ' + (summary or '')
-    for c in KNOWN_COMPANIES + ['华翊量子', '逻辑比特', '幺正量子', '量旋科技', '原子矩阵', '太一量生', '未磁科技', '微观纪元']:
+    for c in GROUP2_COMPANIES:
         if c in text:
             return c
     # Fallback: extract quoted names like 「华翊量子」
@@ -230,19 +241,25 @@ def main():
     print(f'日期范围: {cutoff} ~ {today}\n')
 
     # Search
-    queries = (
-        [f'\"{c}\" 融资' for c in KNOWN_COMPANIES] +        # 精确匹配公司名
-        [f'\"{a}\" 融资' for a in PRIORITY_ACCOUNTS] +      # 精确搜索优先公众号
-        [f'\"{a}\" 投资' for a in PRIORITY_ACCOUNTS] +      # 搭配不同关键词
-        ['\"量子\" \"融资\"', '\"量子\" \"天使轮\"'] +
-        DISCOVERY_QUERIES[:2]
-    )
+    # 构建查询: 1+A, 2+A, 3+B
+    queries = []
+    # 1 + A: 量子公众号 × 投融资关键词
+    for acc in GROUP1_ACCOUNTS:
+        for kw in KEYWORDS_A:
+            queries.append(f'\"{acc}\" \"{kw}\"')
+    # 2 + A: 量子公司 × 投融资关键词（只用一个关键词"融资"减少量）
+    for comp in GROUP2_COMPANIES:
+        queries.append(f'\"{comp}\" 融资')
+    # 3 + B: 投资类公众号 × 量子关键词
+    for acc in GROUP3_ACCOUNTS:
+        for kw in KEYWORDS_B:
+            queries.append(f'\"{acc}\" \"{kw}\"')
     all_articles = []
 
     for q in queries:
         articles = search_sogou(q, max_pages=5)
         for art in articles:
-            is_priority = art['source'] in PRIORITY_ACCOUNTS
+            is_priority = art['source'] in GROUP1_ACCOUNTS
             # Skip macro (unless from priority account)
             if not is_specific_event(art['title'], art['summary']) and not is_priority:
                 continue
