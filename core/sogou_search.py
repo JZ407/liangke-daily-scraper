@@ -48,63 +48,85 @@ MACRO_KEYWORDS = [
 ]
 
 
-def search_sogou(query, max_results=10):
-    """返回 [{title, summary, source, date, redirect_url}, ...]"""
-    url = f'https://weixin.sogou.com/weixin?type=2&s_from=input&query={urllib.parse.quote(query)}&ie=utf8'
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        resp.encoding = 'utf-8'
-    except Exception as e:
-        print(f'  [ERR] {e}')
-        return []
+def search_sogou(query, max_pages=5):
+    """返回 [{title, summary, source, date, redirect_url}, ...]
 
-    if '验证码' in resp.text or '请输入验证码' in resp.text:
-        print(f'  [BLOCKED] captcha')
-        return []
+    翻多页，因为搜狗故意打乱时间顺序，近期文章可能在第2-3页。
+    遇到连续重复页则提前停止。
+    """
+    all_articles = []
+    seen_titles = set()
+    prev_page_hashes = []
 
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    articles = []
+    for page in range(1, max_pages + 1):
+        url = f'https://weixin.sogou.com/weixin?type=2&s_from=input&query={urllib.parse.quote(query)}&ie=utf8&page={page}'
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp.encoding = 'utf-8'
+        except Exception as e:
+            print(f'  [ERR page {page}] {e}')
+            break
 
-    for item in soup.find_all('li', id=re.compile(r'sogou_vr_.*_box')):
-        title_a = item.find('a', id=re.compile(r'title'))
-        title = title_a.get_text(strip=True) if title_a else ''
-        if not title:
-            continue
+        if '验证码' in resp.text or '请输入验证码' in resp.text:
+            print(f'  [BLOCKED page {page}] captcha')
+            break
 
-        # Redirect link
-        redirect = ''
-        for a in item.find_all('a', href=True):
-            href = a.get('href', '')
-            if href.startswith('/link?url='):
-                redirect = 'https://weixin.sogou.com' + href
-                break
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        items = soup.find_all('li', id=re.compile(r'sogou_vr_.*_box'))
 
-        # Summary
-        summary_p = item.find('p', class_='txt-info')
-        summary = summary_p.get_text(strip=True) if summary_p else ''
+        if not items:
+            break
 
-        # Source
-        source_span = item.find('span', class_='all-time-y2')
-        source = source_span.get_text(strip=True) if source_span else ''
+        # Detect repeat: if this page has the same titles as a previous page, stop
+        page_titles = tuple(
+            (it.find('a', id=re.compile(r'title')) or it.find('a')).get_text(strip=True)
+            for it in items if it.find('a')
+        )
+        if page_titles in prev_page_hashes:
+            break
+        prev_page_hashes.append(page_titles)
 
-        # Date from Unix timestamp in <script>timeConvert('...')</script>
-        pub_date = ''
-        ts_match = re.search(r"timeConvert\('(\d+)'\)", str(item))
-        if ts_match:
-            try:
-                pub_date = datetime.fromtimestamp(int(ts_match.group(1))).strftime('%Y-%m-%d')
-            except Exception:
-                pass
+        for item in items:
+            title_a = item.find('a', id=re.compile(r'title'))
+            title = title_a.get_text(strip=True) if title_a else ''
+            if not title or title in seen_titles:
+                continue
+            seen_titles.add(title)
 
-        articles.append({
-            'title': title,
-            'summary': summary,
-            'source': source,
-            'date': pub_date,
-            'redirect': redirect,
-        })
+            # Redirect link
+            redirect = ''
+            for a in item.find_all('a', href=True):
+                href = a.get('href', '')
+                if href.startswith('/link?url='):
+                    redirect = 'https://weixin.sogou.com' + href
+                    break
 
-    return articles[:max_results]
+            # Summary
+            summary_p = item.find('p', class_='txt-info')
+            summary = summary_p.get_text(strip=True) if summary_p else ''
+
+            # Source
+            source_span = item.find('span', class_='all-time-y2')
+            source = source_span.get_text(strip=True) if source_span else ''
+
+            # Date from Unix timestamp
+            pub_date = ''
+            ts_match = re.search(r"timeConvert\('(\d+)'\)", str(item))
+            if ts_match:
+                try:
+                    pub_date = datetime.fromtimestamp(int(ts_match.group(1))).strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+
+            all_articles.append({
+                'title': title,
+                'summary': summary,
+                'source': source,
+                'date': pub_date,
+                'redirect': redirect,
+            })
+
+    return all_articles
 
 
 def is_specific_event(title, summary=''):
@@ -218,7 +240,7 @@ def main():
     all_articles = []
 
     for q in queries:
-        articles = search_sogou(q, max_results=10)
+        articles = search_sogou(q, max_pages=5)
         for art in articles:
             is_priority = art['source'] in PRIORITY_ACCOUNTS
             # Skip macro (unless from priority account)
