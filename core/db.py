@@ -33,6 +33,7 @@ class Article(Base):
     reference_title = Column(String(200))
     tags = Column(JSON)
     page_type = Column(String(20), default='')
+    content_edited = Column(Integer, default=0)
     first_seen_at = Column(DateTime, default=datetime.now)
     last_seen_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     fetch_count = Column(Integer, default=1)
