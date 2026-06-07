@@ -167,16 +167,20 @@ def extract_company(title, summary=''):
 
 
 def title_key(title, date='', summary=''):
-    """Dedup key: company name + week number. Same company in same week = duplicate."""
+    """Dedup key: company + funding round. Same company + same round = same event.
+
+    Uses round (A轮/B轮/天使/...) instead of time, so re-shares of old news
+    are correctly deduped even if published months apart.
+    """
     company = extract_company(title, summary)
-    if company and date:
-        try:
-            d = datetime.strptime(date, '%Y-%m-%d')
-            week = d.strftime('%Y-W%W')  # Monday-based week (Chinese convention)
-            return f'{company}:{week}'
-        except Exception:
-            pass
-    # Fallback: first 12 meaningful chars
+    round_ = extract_round(title + ' ' + (summary or ''))
+    if company:
+        if round_:
+            return f'{company}:{round_}'
+        # Fallback: company + first 6 chars of cleaned title
+        clean = re.sub(r'[【】「」《》\s\-\|,，。！？、]', '', title)
+        return f'{company}:{clean[:6]}'
+    # Last resort
     clean = re.sub(r'[【】「」《》\s\-\|,，。！？、]', '', title)
     return clean[:12]
 
