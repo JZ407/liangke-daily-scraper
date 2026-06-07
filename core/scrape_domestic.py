@@ -18,11 +18,34 @@ HEADERS = {
                   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
-# Search queries → return up to 10 results each
+# Chinese quantum company names for targeted search
+DOMESTIC_COMPANIES = [
+    '本源量子', '国盾量子', '国仪量子', '玻色量子', '图灵量子',
+    '量旋科技', '中科酷原', '启科量子', '华翊量子', '弧光量子',
+    '不筹量子', '太一量生', '微观纪元', '矩量光启', '原子矩阵',
+    '问天量子', '正则量子', '合肥幺正', '苏州华杨',
+]
+
+# Search for each company + financing keyword
 SEARCH_QUERIES = [
-    '量子 融资 亿 2026',
-    '量子 投资 轮 2026',
-    '量子 IPO 上市 2026',
+    f'{company} 融资' for company in DOMESTIC_COMPANIES[:5]  # rotate daily
+] + [
+    f'{company} 投资 轮' for company in DOMESTIC_COMPANIES[5:10]
+] + [
+    '量子 国内 融资 亿元',
+    '量子计算 人民币 融资',
+]
+
+# Chinese location/company indicators for strict domestic filtering
+DOMESTIC_MARKERS = [
+    '中国', '上海', '北京', '深圳', '苏州', '合肥', '武汉', '南京', '杭州',
+    '成都', '济南', '西安', '广州', '无锡', '常州', '宁波',
+    '本源', '国盾', '国仪', '玻色', '图灵', '量旋', '中科酷原', '启科',
+    '华翊', '弧光', '不筹', '太一', '微观纪元', '矩量', '原子矩阵',
+    '问天', '正则', '幺正', '华杨', '阿里巴巴', '腾讯', '百度', '华为',
+    '中移动', '中国移动', '中电信', '中国电信', '人民币', '亿元', '万元',
+    '中科院', '中国科学技术大学', '清华', '北大', '浙大', '上海交大',
+    '合肥国家实验室', '北京量子院', '之江实验室',
 ]
 
 # Source domains and their article selectors
@@ -67,7 +90,10 @@ DOMAIN_HANDLERS = {
 
 
 def is_domestic_quantum_finance(title: str) -> bool:
-    """Quick filter: is this about domestic quantum investment?"""
+    """Strict filter: only Chinese domestic quantum investment news.
+
+    Requires ALL THREE: quantum keyword + finance keyword + domestic marker.
+    """
     title = title or ''
     has_quantum = any(kw in title for kw in [
         '量子', '超导量子', '光量子', '离子阱', '中性原子',
@@ -78,7 +104,8 @@ def is_domestic_quantum_finance(title: str) -> bool:
         'A轮', 'B轮', 'C轮', '天使', '种子', '战略',
         '亿', '轮', '美元', '人民币',
     ])
-    return has_quantum and has_finance
+    has_domestic = any(kw in title for kw in DOMESTIC_MARKERS)
+    return has_quantum and has_finance and has_domestic
 
 
 def discover_articles(days_back=3):
