@@ -284,14 +284,14 @@ def main():
     queries = []
     for acc in GROUP1_ACCOUNTS:
         for kw in KEYWORDS_A:
-            queries.append(f'\"{acc}\" \"{kw}\"')
+            queries.append(f'\"{acc}\" \"{kw}\" \"2026年\"')
     all_articles = []
     blocked_count = 0
     qi = 0
 
     while qi < len(queries):
         q = queries[qi]
-        articles = search_sogou(q, max_pages=5)
+        articles = search_sogou(q, max_pages=3)
 
         # Captcha cooling: pause 60s then retry same query
         if not articles:
