@@ -109,15 +109,28 @@ def search_sogou(query, max_results=10):
 
 def is_specific_event(title, summary=''):
     """True if article is about a specific investment event, not macro analysis."""
+    title = title or ''
+    summary = summary or ''
     text = title + ' ' + summary
-    # Must mention specific company funding activity
+
+    # Must have a specific company name AND specific funding activity
+    has_company = bool(extract_company(title, summary))
+    if not has_company:
+        # Fallback: look for company-like patterns in title
+        has_company = bool(re.search(
+            r'(「.{2,8}?」|[【].{2,8}?[】]|有限公司|科技公司|初创公司|量子公司)',
+            title
+        ))
+
     has_specific = bool(re.search(
-        r'(完成|获|获得|宣布|签署|完成|又|再|刚|正式|新一轮|独家).{0,10}'
+        r'(完成|获|获得|宣布|签署|又|再|刚|正式|新一轮|独家).{0,10}'
         r'(融资|投资|A轮|B轮|C轮|天使|种子|Pre-IPO|IPO|上市|Pre-A|Pre-B)',
         text
     ))
+
     is_macro = any(kw in title for kw in MACRO_KEYWORDS)
-    return has_specific and not is_macro
+
+    return has_company and has_specific and not is_macro
 
 
 def extract_amount(text):
@@ -140,25 +153,26 @@ def extract_round(text):
     return ''
 
 
-def extract_company(title):
-    """Extract company name from title for dedup."""
-    for c in KNOWN_COMPANIES + ['华翊量子', '逻辑比特', '幺正量子', '量旋科技', '原子矩阵', '太一量生']:
-        if c in title:
+def extract_company(title, summary=''):
+    """Extract company name from title+summary for dedup."""
+    text = (title or '') + ' ' + (summary or '')
+    for c in KNOWN_COMPANIES + ['华翊量子', '逻辑比特', '幺正量子', '量旋科技', '原子矩阵', '太一量生', '未磁科技', '微观纪元']:
+        if c in text:
             return c
     # Fallback: extract quoted names like 「华翊量子」
-    m = re.search(r'[「【](.{2,8}?(?:量子|科技|光电|计算))[」】]', title)
+    m = re.search(r'[「【](.{2,8}?(?:量子|科技|光电|计算|磁科技))[」】]', text)
     if m:
         return m.group(1)
     return None
 
 
-def title_key(title, date=''):
+def title_key(title, date='', summary=''):
     """Dedup key: company name + week number. Same company in same week = duplicate."""
-    company = extract_company(title)
+    company = extract_company(title, summary)
     if company and date:
         try:
             d = datetime.strptime(date, '%Y-%m-%d')
-            week = d.strftime('%Y-W%U')
+            week = d.strftime('%Y-W%W')  # Monday-based week (Chinese convention)
             return f'{company}:{week}'
         except Exception:
             pass
@@ -179,7 +193,7 @@ def main():
         known_urls.add(r.reference_url or '')
         known_urls.add(r.liangke_url or '')
         # Also load dedup keys to prevent re-inserting same event
-        key = title_key(r.title or '', str(r.liangke_date) if r.liangke_date else '')
+        key = title_key(r.title or '', str(r.liangke_date) if r.liangke_date else '', r.content or '')
         if key:
             seen_titles.add(key)
 
@@ -191,7 +205,7 @@ def main():
 
     # Search
     queries = (
-        [f'{c} 融资' for c in KNOWN_COMPANIES[:8]] +
+        [f'{c} 融资' for c in KNOWN_COMPANIES] +  # 搜全部公司
         ['量子 融资', '量子 投资', '量子 天使轮'] +  # 覆盖优先公众号
         DISCOVERY_QUERIES[:2]
     )
@@ -208,7 +222,7 @@ def main():
             if art['date'] and art['date'] < str(cutoff):
                 continue
             # Dedup: same company + same week = duplicate
-            key = title_key(art['title'], art['date'])
+            key = title_key(art['title'], art['date'], art['summary'])
             if key in seen_titles:
                 continue
             seen_titles.add(key)
