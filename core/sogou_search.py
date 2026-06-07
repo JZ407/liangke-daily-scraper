@@ -280,9 +280,9 @@ def main():
     print(f'日期范围: {cutoff} ~ {today}\n')
 
     # Search
-    # 每天轮换一个关键词 × 6 个公众号 = 6 条查询，6 天一个周期
-    kw = KEYWORDS_A[today.timetuple().tm_yday % len(KEYWORDS_A)]
-    queries = [f'\"{acc}\" \"{kw}\" \"2026年\"' for acc in GROUP1_ACCOUNTS]
+    # 每天轮换一个公众号 × 6 个关键词 = 6 条查询，6 天一个周期
+    acc = GROUP1_ACCOUNTS[today.timetuple().tm_yday % len(GROUP1_ACCOUNTS)]
+    queries = [f'\"{acc}\" \"{kw}\" \"2026年\"' for kw in KEYWORDS_A]
     all_articles = []
 
     for qi, q in enumerate(queries):
