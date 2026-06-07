@@ -19,6 +19,9 @@ HEADERS = {
     'Referer': 'https://weixin.sogou.com/',
 }
 
+# 重点关注的量子行业微信公众号
+PRIORITY_ACCOUNTS = ['量子大观', '量子客', '光子盒', '量子之声', '量子前哨']
+
 KNOWN_COMPANIES = [
     '本源量子', '国盾量子', '国仪量子', '玻色量子', '图灵量子',
     '量旋科技', '中科酷原', '启科量子', '华翊量子', '弧光量子',
@@ -161,15 +164,20 @@ def main():
     print(f'日期范围: {cutoff} ~ {today}\n')
 
     # Search
-    queries = [f'{c} 融资' for c in KNOWN_COMPANIES[:10]] + DISCOVERY_QUERIES[:2]
+    queries = (
+        [f'{c} 融资' for c in KNOWN_COMPANIES[:8]] +
+        ['量子 融资', '量子 投资', '量子 天使轮'] +  # 覆盖优先公众号
+        DISCOVERY_QUERIES[:2]
+    )
     all_articles = []
     seen_titles = set()
 
     for q in queries:
         articles = search_sogou(q, max_results=10)
         for art in articles:
-            # Skip macro
-            if not is_specific_event(art['title'], art['summary']):
+            is_priority = art['source'] in PRIORITY_ACCOUNTS
+            # Skip macro (unless from priority account)
+            if not is_specific_event(art['title'], art['summary']) and not is_priority:
                 continue
             # Skip old
             if art['date'] and art['date'] < str(cutoff):
