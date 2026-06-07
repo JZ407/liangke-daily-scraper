@@ -140,11 +140,31 @@ def extract_round(text):
     return ''
 
 
-def title_key(title):
-    """Generate a dedup key: first 8 meaningful characters."""
-    # Remove punctuation, spaces, and common prefixes/suffixes
+def extract_company(title):
+    """Extract company name from title for dedup."""
+    for c in KNOWN_COMPANIES + ['华翊量子', '逻辑比特', '幺正量子', '量旋科技', '原子矩阵', '太一量生']:
+        if c in title:
+            return c
+    # Fallback: extract quoted names like 「华翊量子」
+    m = re.search(r'[「【](.{2,8}?(?:量子|科技|光电|计算))[」】]', title)
+    if m:
+        return m.group(1)
+    return None
+
+
+def title_key(title, date=''):
+    """Dedup key: company name + week number. Same company in same week = duplicate."""
+    company = extract_company(title)
+    if company and date:
+        try:
+            d = datetime.strptime(date, '%Y-%m-%d')
+            week = d.strftime('%Y-W%U')
+            return f'{company}:{week}'
+        except Exception:
+            pass
+    # Fallback: first 12 meaningful chars
     clean = re.sub(r'[【】「」《》\s\-\|,，。！？、]', '', title)
-    return clean[:8]
+    return clean[:12]
 
 
 def main():
@@ -182,8 +202,8 @@ def main():
             # Skip old
             if art['date'] and art['date'] < str(cutoff):
                 continue
-            # Dedup by title similarity
-            key = title_key(art['title'])
+            # Dedup: same company + same week = duplicate
+            key = title_key(art['title'], art['date'])
             if key in seen_titles:
                 continue
             seen_titles.add(key)
