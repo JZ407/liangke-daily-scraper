@@ -228,7 +228,7 @@ def main():
                 source_domain=art['source'],
                 reference_title=art['title'],
                 tags={'weekly': [cat], 'search_tags': ['国内投融资', '搜狗微信']},
-                page_type='reference'
+                page_type='wechat'
             )
             stats['new'] += 1
             known_urls.add(liangke_url)
