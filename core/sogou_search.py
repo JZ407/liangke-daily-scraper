@@ -247,9 +247,9 @@ def main():
     for acc in GROUP1_ACCOUNTS:
         for kw in KEYWORDS_A:
             queries.append(f'\"{acc}\" \"{kw}\"')
-    # 2 + A: 量子公司 × 投融资关键词（只用一个关键词"融资"减少量）
+    # 2 + A: 量子公司 × 投融资关键词
     for comp in GROUP2_COMPANIES:
-        queries.append(f'\"{comp}\" 融资')
+        queries.append(f'\"{comp}\" \"融资\"')
     # 3 + B: 投资类公众号 × 量子关键词
     for acc in GROUP3_ACCOUNTS:
         for kw in KEYWORDS_B:
