@@ -49,7 +49,7 @@ KEYWORDS_A = ['融资', 'A轮', 'IPO', '估值', '收购', '战略投资']
 KEYWORDS_B = ['量子计算', '量子通信', '量子传感', '量子科技', '量子芯片', '量子比特', '量子纠错']
 
 # Only keep today's articles
-MAX_AGE_DAYS = 7  # temporary: weekly catch-up run
+MAX_AGE_DAYS = 1  # daily run
 
 # 海外公司/机构 — 国内投融资不收录
 OVERSEAS_TERMS = [
@@ -280,29 +280,16 @@ def main():
     print(f'日期范围: {cutoff} ~ {today}\n')
 
     # Search
-    # 构建查询: 1+A 量子公众号 × 投融资关键词
-    queries = []
-    for acc in GROUP1_ACCOUNTS:
-        for kw in KEYWORDS_A:
-            queries.append(f'\"{acc}\" \"{kw}\" \"2026年\"')
+    # 每天轮换一个关键词 × 6 个公众号 = 6 条查询，6 天一个周期
+    kw = KEYWORDS_A[today.timetuple().tm_yday % len(KEYWORDS_A)]
+    queries = [f'\"{acc}\" \"{kw}\" \"2026年\"' for acc in GROUP1_ACCOUNTS]
     all_articles = []
-    failed_queries = []
 
     for qi, q in enumerate(queries):
-        retries = 0
-        articles = []
-        while retries < 2:
-            articles = search_sogou(q, max_pages=3)
-            if articles:
-                break
-            retries += 1
-            if retries < 2:
-                time.sleep(random.uniform(20, 30))  # wait before retry
-
+        articles = search_sogou(q, max_pages=3)
         if not articles:
-            failed_queries.append(q)
             if qi + 1 < len(queries):
-                time.sleep(random.uniform(10, 15))
+                time.sleep(random.uniform(8, 12))
             continue
 
         for art in articles:
@@ -322,12 +309,9 @@ def main():
             seen_titles.add(key)
             all_articles.append(art)
 
-        # Delay between successful queries
+        # Delay between queries
         if qi + 1 < len(queries):
-            time.sleep(random.uniform(12, 18))
-
-        if (qi + 1) % 6 == 0:
-            print(f'  [{qi+1}/{len(queries)}] {len(all_articles)} found')
+            time.sleep(random.uniform(6, 10))
 
     # Sort by date
     all_articles.sort(key=lambda a: a['date'] or '0000', reverse=True)
@@ -385,11 +369,6 @@ def main():
         time.sleep(random.uniform(0.5, 1.5))
 
     session.close()
-    if failed_queries:
-        nf = len(failed_queries)
-        print(f'\nFailed ({nf}):')
-        for fq in failed_queries[:10]:
-            print(f'  {fq}')
     snew = stats['new']
     sskip = stats['skipped']
     print(f'\nDone. New: {snew}  Skipped: {sskip}')
