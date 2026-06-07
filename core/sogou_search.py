@@ -49,13 +49,26 @@ KEYWORDS_A = ['融资', '投资', '天使轮', 'A轮', 'B轮', 'C轮', 'IPO', '�
 KEYWORDS_B = ['量子计算', '量子通信', '量子传感', '量子科技', '量子芯片', '量子比特', '量子纠错']
 
 # Only keep today's articles
-MAX_AGE_DAYS = 1
+MAX_AGE_DAYS = 7  # temporary: weekly catch-up run
+
+# 海外公司/机构 — 国内投融资不收录
+OVERSEAS_TERMS = [
+    'OQC', 'Quantinuum', 'IBM', 'Microsoft', '微软', 'PsiQuantum', 'D-Wave',
+    'IonQ', 'Rigetti', 'Xanadu', 'QuEra', 'Alice & Bob', 'IQM',
+    'Infleqtion', 'Pasqal', 'Quobly', 'SEALSQ', 'Quantum Motion',
+    'Quantum Source', 'Riverlane', 'Oxford Ionics', 'Atom Computing',
+    'Bluefors', 'Q-CTRL', 'Qnami', 'Universal Quantum',
+    'MIT', '哈佛', 'Stanford', '牛津', '剑桥', '苏黎世', '代尔夫特',
+    '欧盟', '欧洲', '英国', '美国', '日本', '韩国', '德国', '法国', '加拿大', '澳大利亚',
+    '英镑', '美元', '欧元', '加元',
+]
 
 # Macro keywords to skip
 MACRO_KEYWORDS = [
     '赛道', '趋势', '盘点', '汇总', 'Q1', '展望', '报告', '回顾',
     '一览', '全景', '格局', '图景', '已有', '又有', '多家', '8家', '10家',
     '融资日报', '投融资日报',
+    '周报', '周刊', '月报',
 ]
 
 
@@ -137,7 +150,20 @@ def search_sogou(query, max_pages=5):
                 'redirect': redirect,
             })
 
+        # Delay between pages
+        if page < max_pages:
+            time.sleep(random.uniform(1, 2))
+
     return all_articles
+
+
+def is_domestic(title, summary=''):
+    """True if article is about Chinese domestic quantum investment."""
+    text = (title or '') + ' ' + (summary or '')
+    for term in OVERSEAS_TERMS:
+        if term.lower() in text.lower():
+            return False
+    return True
 
 
 def is_specific_event(title, summary=''):
@@ -256,24 +282,30 @@ def main():
             queries.append(f'\"{acc}\" \"{kw}\"')
     all_articles = []
 
-    for q in queries:
+    for qi, q in enumerate(queries):
         articles = search_sogou(q, max_pages=5)
         for art in articles:
-            is_priority = art['source'] in GROUP1_ACCOUNTS
-            # Skip macro (unless from priority account)
-            if not is_specific_event(art['title'], art['summary']) and not is_priority:
+            # Skip overseas
+            if not is_domestic(art['title'], art['summary']):
                 continue
             # Skip old
             if art['date'] and art['date'] < str(cutoff):
                 continue
-            # Dedup: same company + same week = duplicate
+            # Skip macro (unless from priority account)
+            is_priority = art['source'] in GROUP1_ACCOUNTS
+            if not is_specific_event(art['title'], art['summary']) and not is_priority:
+                continue
+            # Dedup
             key = title_key(art['title'], art['date'], art['summary'])
             if key in seen_titles:
                 continue
             seen_titles.add(key)
             all_articles.append(art)
 
-        time.sleep(random.uniform(1.5, 3))
+        # Anti-blocking: longer delay, show progress
+        if (qi + 1) % 10 == 0:
+            print(f'  [{qi+1}/{len(queries)}] queries done, {len(all_articles)} found so far')
+        time.sleep(random.uniform(6, 10))
 
     # Sort by date
     all_articles.sort(key=lambda a: a['date'] or '0000', reverse=True)
