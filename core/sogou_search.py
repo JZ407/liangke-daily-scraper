@@ -166,16 +166,29 @@ def is_domestic(title, summary=''):
     return True
 
 
+def is_quantum(title, summary=''):
+    """True if article is about quantum technology (not just any tech investment)."""
+    text = (title or '') + ' ' + (summary or '')[:300]
+    return any(kw in text for kw in [
+        '量子', '超导量子', '光量子', '离子阱', '中性原子', '硅自旋', '拓扑量子',
+        '量子计算', '量子芯片', '量子比特', '量子纠错', '量子密钥', 'QKD',
+        '量子通信', '量子传感', '量子精密测量', '量子磁力', '量子雷达',
+    ])
+
+
 def is_specific_event(title, summary=''):
     """True if article is about a specific investment event, not macro analysis."""
     title = title or ''
     summary = summary or ''
     text = title + ' ' + summary
 
+    # Must be quantum-related (non-negotiable)
+    if not is_quantum(title, summary):
+        return False
+
     # Must have a specific company name AND specific funding activity
     has_company = bool(extract_company(title, summary))
     if not has_company:
-        # Fallback: look for company-like patterns in title
         has_company = bool(re.search(
             r'(「.{2,8}?」|[【].{2,8}?[】]|有限公司|科技公司|初创公司|量子公司)',
             title
@@ -291,9 +304,8 @@ def main():
             # Skip old
             if art['date'] and art['date'] < str(cutoff):
                 continue
-            # Skip macro (unless from priority account)
-            is_priority = art['source'] in GROUP1_ACCOUNTS
-            if not is_specific_event(art['title'], art['summary']) and not is_priority:
+            # Skip non-investment events (量子相关性现在是硬性要求)
+            if not is_specific_event(art['title'], art['summary']):
                 continue
             # Dedup
             key = title_key(art['title'], art['date'], art['summary'])
