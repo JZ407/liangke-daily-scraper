@@ -286,27 +286,24 @@ def main():
         for kw in KEYWORDS_A:
             queries.append(f'\"{acc}\" \"{kw}\" \"2026年\"')
     all_articles = []
-    blocked_count = 0
-    qi = 0
+    failed_queries = []
 
-    while qi < len(queries):
-        q = queries[qi]
-        articles = search_sogou(q, max_pages=3)
+    for qi, q in enumerate(queries):
+        retries = 0
+        articles = []
+        while retries < 2:
+            articles = search_sogou(q, max_pages=3)
+            if articles:
+                break
+            retries += 1
+            if retries < 2:
+                time.sleep(random.uniform(20, 30))  # wait before retry
 
-        # Captcha cooling: pause 60s then retry same query
         if not articles:
-            blocked_count += 1
-            if blocked_count >= 3:
-                cooldown = random.uniform(45, 75)
-                print(f'  [{qi+1}/{len(queries)}] {blocked_count} captchas — cooling {cooldown:.0f}s...')
-                time.sleep(cooldown)
-                blocked_count = 0
-            else:
-                time.sleep(random.uniform(10, 20))
-            continue  # retry same query
-
-        blocked_count = 0  # reset on success
-        qi += 1
+            failed_queries.append(q)
+            if qi + 1 < len(queries):
+                time.sleep(random.uniform(10, 15))
+            continue
 
         for art in articles:
             # Skip overseas
@@ -325,12 +322,12 @@ def main():
             seen_titles.add(key)
             all_articles.append(art)
 
-        # Delay between queries
-        delay = random.uniform(8, 15) if blocked_count == 0 else random.uniform(15, 30)
-        time.sleep(delay)
+        # Delay between successful queries
+        if qi + 1 < len(queries):
+            time.sleep(random.uniform(12, 18))
 
-        if qi > 0 and qi % 6 == 0:
-            print(f'  [{qi}/{len(queries)}] {len(all_articles)} found')
+        if (qi + 1) % 6 == 0:
+            print(f'  [{qi+1}/{len(queries)}] {len(all_articles)} found')
 
     # Sort by date
     all_articles.sort(key=lambda a: a['date'] or '0000', reverse=True)
@@ -388,7 +385,14 @@ def main():
         time.sleep(random.uniform(0.5, 1.5))
 
     session.close()
-    print(f'\nDone. New: {stats["new"]}  Skipped: {stats["skipped"]}')
+    if failed_queries:
+        nf = len(failed_queries)
+        print(f'\nFailed ({nf}):')
+        for fq in failed_queries[:10]:
+            print(f'  {fq}')
+    snew = stats['new']
+    sskip = stats['skipped']
+    print(f'\nDone. New: {snew}  Skipped: {sskip}')
 
 
 if __name__ == '__main__':
