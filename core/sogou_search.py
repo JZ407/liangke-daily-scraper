@@ -286,9 +286,28 @@ def main():
         for kw in KEYWORDS_A:
             queries.append(f'\"{acc}\" \"{kw}\"')
     all_articles = []
+    blocked_count = 0
+    qi = 0
 
-    for qi, q in enumerate(queries):
+    while qi < len(queries):
+        q = queries[qi]
         articles = search_sogou(q, max_pages=5)
+
+        # Captcha cooling: pause 60s then retry same query
+        if not articles:
+            blocked_count += 1
+            if blocked_count >= 3:
+                cooldown = random.uniform(45, 75)
+                print(f'  [{qi+1}/{len(queries)}] {blocked_count} captchas — cooling {cooldown:.0f}s...')
+                time.sleep(cooldown)
+                blocked_count = 0
+            else:
+                time.sleep(random.uniform(10, 20))
+            continue  # retry same query
+
+        blocked_count = 0  # reset on success
+        qi += 1
+
         for art in articles:
             # Skip overseas
             if not is_domestic(art['title'], art['summary']):
@@ -306,10 +325,12 @@ def main():
             seen_titles.add(key)
             all_articles.append(art)
 
-        # Anti-blocking: longer delay, show progress
-        if (qi + 1) % 10 == 0:
-            print(f'  [{qi+1}/{len(queries)}] queries done, {len(all_articles)} found so far')
-        time.sleep(random.uniform(6, 10))
+        # Delay between queries
+        delay = random.uniform(8, 15) if blocked_count == 0 else random.uniform(15, 30)
+        time.sleep(delay)
+
+        if qi > 0 and qi % 6 == 0:
+            print(f'  [{qi}/{len(queries)}] {len(all_articles)} found')
 
     # Sort by date
     all_articles.sort(key=lambda a: a['date'] or '0000', reverse=True)
