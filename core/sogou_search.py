@@ -280,18 +280,10 @@ def main():
     print(f'日期范围: {cutoff} ~ {today}\n')
 
     # Search
-    # 构建查询: 1+A, 2+A, 3+B
+    # 构建查询: 1+A 量子公众号 × 投融资关键词
     queries = []
-    # 1 + A: 量子公众号 × 投融资关键词
     for acc in GROUP1_ACCOUNTS:
         for kw in KEYWORDS_A:
-            queries.append(f'\"{acc}\" \"{kw}\"')
-    # 2 + A: 量子公司 × 投融资关键词
-    for comp in GROUP2_COMPANIES:
-        queries.append(f'\"{comp}\" \"融资\"')
-    # 3 + B: 投资类公众号 × 量子关键词
-    for acc in GROUP3_ACCOUNTS:
-        for kw in KEYWORDS_B:
             queries.append(f'\"{acc}\" \"{kw}\"')
     all_articles = []
 
