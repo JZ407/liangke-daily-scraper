@@ -239,14 +239,14 @@ def main():
         known.add(r[0])
 
     today = datetime.now().date()
-    recent = today - timedelta(days=3)
+    cutoff = today - timedelta(days=7)  # keep last week, insert only last 2 days
 
     print(f'=== Domestic quantum investment scrape: {today} ===')
 
     # Step 1: Discover
-    articles = discover_articles(days_back=3)
+    articles = discover_articles(days_back=7)
 
-    stats = {'new': 0, 'skipped': 0, 'errors': 0}
+    stats = {'new': 0, 'skipped': 0, 'errors': 0, 'old': 0}
 
     # Step 2: Scrape & Insert
     for i, art in enumerate(articles):
@@ -272,7 +272,7 @@ def main():
         print(f'  Title: {title_short}')
         print(f'  Date: {detail["date"] or "N/A"} | Content: {len(detail["content"])} chars')
 
-        # Parse date
+        # Parse date and filter: only insert if within last 2 days
         liangke_date = today
         if detail['date']:
             try:
@@ -282,6 +282,11 @@ def main():
                     liangke_date = datetime.strptime(detail['date'][:10], '%Y-%m-%d').date()
                 except ValueError:
                     pass
+
+        if liangke_date < today - timedelta(days=2):
+            print(f'  -> SKIPPED (date: {liangke_date}, too old)')
+            stats['old'] += 1
+            continue
 
         # Classify with dictionary scorer
         cat = scorer.classify(detail['title'], detail['content'], art['url'])
