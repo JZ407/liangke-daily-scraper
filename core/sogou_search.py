@@ -31,10 +31,10 @@ KNOWN_COMPANIES = [
 ]
 
 DISCOVERY_QUERIES = [
-    '量子计算 天使轮 亿元',
-    '量子计算 A轮 亿元',
-    '量子计算 Pre-A 融资',
-    '量子计算 完成 数千万 融资',
+    '"量子计算" "天使轮" 亿元',
+    '"量子计算" "A轮" 亿元',
+    '"量子计算" "Pre-A" 融资',
+    '"量子计算" "数千万" 融资',
 ]
 
 # Only keep articles from last N days
@@ -209,8 +209,8 @@ def main():
 
     # Search
     queries = (
-        [f'{c} 融资' for c in KNOWN_COMPANIES] +  # 搜全部公司
-        ['量子 融资', '量子 投资', '量子 天使轮'] +  # 覆盖优先公众号
+        [f'\"{c}\" 融资' for c in KNOWN_COMPANIES] +  # 精确匹配公司名
+        ['\"量子\" \"融资\"', '\"量子\" \"投资\"', '\"量子\" \"天使轮\"'] +
         DISCOVERY_QUERIES[:2]
     )
     all_articles = []
