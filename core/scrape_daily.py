@@ -2,6 +2,12 @@
 量科网每日新闻抓取脚本 (MySQL + 去重 + 原始日期提取)
 """
 import sys
+if sys.platform == 'win32':
+    try: sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+    except Exception: pass
+    try: sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
+    except Exception: pass
+
 import requests
 from category_scorer import get_scorer  # unified dictionary-based classifier
 from bs4 import BeautifulSoup

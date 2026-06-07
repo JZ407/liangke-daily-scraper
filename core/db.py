@@ -1,6 +1,11 @@
 """
 Database layer for 量科网 scraper using SQLAlchemy ORM.
 """
+import sys, os
+if sys.platform == 'win32':
+    sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+    sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
+
 from sqlalchemy import create_engine, Column, Integer, String, Text, Date, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.dialects.mysql import LONGTEXT
