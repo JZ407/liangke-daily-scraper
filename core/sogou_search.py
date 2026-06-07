@@ -27,7 +27,7 @@ KNOWN_COMPANIES = [
     '量旋科技', '中科酷原', '启科量子', '华翊量子', '弧光量子',
     '不筹量子', '太一量生', '微观纪元', '矩量光启', '原子矩阵',
     '问天量子', '正则量子', '量坤科技', '相干科技', '幺正量子',
-    '逻辑比特',
+    '逻辑比特', '无问清芯',
 ]
 
 DISCOVERY_QUERIES = [
@@ -171,11 +171,17 @@ def main():
     session = get_session()
     scorer = get_scorer()
 
-    # Load known URLs to skip already-inserted
+    # Load known URLs and dedup keys from DB
     from core.db import Article
     known_urls = set()
-    for r in session.query(Article.reference_url).filter(Article.reference_url.like('%mp.weixin.qq.com%')).all():
-        known_urls.add(r[0])
+    seen_titles = set()
+    for r in session.query(Article).filter(Article.page_type == 'wechat').all():
+        known_urls.add(r.reference_url or '')
+        known_urls.add(r.liangke_url or '')
+        # Also load dedup keys to prevent re-inserting same event
+        key = title_key(r.title or '', str(r.liangke_date) if r.liangke_date else '')
+        if key:
+            seen_titles.add(key)
 
     today = datetime.now().date()
     cutoff = today - timedelta(days=MAX_AGE_DAYS)
@@ -190,7 +196,6 @@ def main():
         DISCOVERY_QUERIES[:2]
     )
     all_articles = []
-    seen_titles = set()
 
     for q in queries:
         articles = search_sogou(q, max_results=10)
