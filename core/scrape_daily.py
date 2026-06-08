@@ -349,12 +349,34 @@ def auto_tag(title: str, content: str, reference_url: str = '') -> list:
 
 
 def load_cookies():
-    if not os.path.exists(COOKIE_PATH):
-        print(f"ERROR: Cookie file not found: {COOKIE_PATH}")
-        print("Please run update_cookie.bat first after logging in to 量科网.")
-        return None
-    with open(COOKIE_PATH, 'rb') as f:
-        return pickle.load(f)
+    # Priority 1: cookies.txt (raw Cookie header from browser Network tab)
+    txt_path = os.path.join(BASE_DIR, '..', 'cookies.txt')
+    if os.path.exists(txt_path):
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            header = f.read().strip()
+        if header:
+            cookies = {}
+            for pair in header.split(';'):
+                pair = pair.strip()
+                if '=' in pair:
+                    k, v = pair.split('=', 1)
+                    cookies[k.strip()] = v.strip()
+            if cookies:
+                return cookies
+
+    # Priority 2: pickle file (CDP-extracted)
+    if os.path.exists(COOKIE_PATH):
+        with open(COOKIE_PATH, 'rb') as f:
+            return pickle.load(f)
+
+    # Neither found
+    print(f"ERROR: No cookie file found.")
+    print(f"  Tried: {txt_path}")
+    print(f"  Tried: {COOKIE_PATH}")
+    print("To update: login to www.qtc.com.cn in browser, F12 → Network tab →")
+    print("click any qtc.com.cn request → copy 'Cookie' header → paste into:")
+    print(f"  {txt_path}")
+    return None
 
 
 def get_today_str():
