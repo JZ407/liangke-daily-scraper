@@ -9,6 +9,7 @@ import re
 import yaml
 import os
 from typing import Dict, Optional
+import jieba
 
 # Load dictionary relative to this file
 DICT_PATH = os.path.join(os.path.dirname(__file__), 'category_dict.yaml')
@@ -57,13 +58,13 @@ class CategoryScorer:
         scores = {cat: 0.0 for cat in self.categories}
         for cat, cfg in self.categories.items():
             for kw, weight in cfg.get('positives', {}).items():
-                if kw.lower() in text_lower:
+                if _tokenized_match(kw, text_lower):
                     scores[cat] += float(weight)
 
         # Phase 3: Negative scoring (penalties)
         for cat, cfg in self.categories.items():
             for kw, penalty in cfg.get('negatives', {}).items():
-                if kw.lower() in text_lower:
+                if _tokenized_match(kw, text_lower):
                     # penalty is stored as negative number already
                     scores[cat] += float(penalty)
 
@@ -92,10 +93,10 @@ class CategoryScorer:
         scores = {cat: 0.0 for cat in self.categories}
         for cat, cfg in self.categories.items():
             for kw, weight in cfg.get('positives', {}).items():
-                if kw.lower() in text_lower:
+                if _tokenized_match(kw, text_lower):
                     scores[cat] += float(weight)
             for kw, penalty in cfg.get('negatives', {}).items():
-                if kw.lower() in text_lower:
+                if _tokenized_match(kw, text_lower):
                     scores[cat] += float(penalty)
         return scores
 
@@ -114,6 +115,50 @@ class CategoryScorer:
                    if kw.lower() in text_lower]
             matches[cat] = {'positives': pos, 'negatives': neg}
         return matches
+
+
+def _tokenized_match(keyword: str, text: str) -> bool:
+    """Check if keyword appears as a word in text (jieba boundary-aware).
+
+    Avoids substring false matches like '合作' matching inside '光合作用'.
+    For English keywords: uses case-insensitive word-boundary regex.
+    For Chinese keywords: tokenizes text with jieba, then checks if keyword
+    appears as a complete token or as a substring bounded by non-CJK characters.
+    """
+    if not keyword or not text:
+        return False
+    kw_lower = keyword.lower()
+    text_lower = text.lower()
+
+    # English/numeric keywords: use regex word boundaries
+    if re.match(r'^[a-zA-Z0-9\s\-\.\+\$]+$', kw_lower):
+        try:
+            return bool(re.search(r'\b' + re.escape(kw_lower) + r'\b', text_lower))
+        except re.error:
+            return kw_lower in text_lower
+
+    # Chinese/mixed: use jieba tokenization
+    tokens = set(jieba.lcut(text_lower))
+    # Check as whole token
+    if kw_lower in tokens:
+        return True
+    # Check as substring bounded by non-CJK chars
+    # This catches multi-word phrases where jieba might split differently
+    idx = text_lower.find(kw_lower)
+    while idx >= 0:
+        before_ok = idx == 0 or not _is_cjk(text_lower[idx - 1])
+        after_ok = idx + len(kw_lower) >= len(text_lower) or not _is_cjk(text_lower[idx + len(kw_lower)])
+        if before_ok and after_ok:
+            return True
+        idx = text_lower.find(kw_lower, idx + 1)
+    return False
+
+
+def _is_cjk(ch: str) -> bool:
+    """Check if character is a CJK unified ideograph."""
+    cp = ord(ch)
+    return (0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or
+            0x20000 <= cp <= 0x2A6DF or 0xF900 <= cp <= 0xFAFF)
 
 
 # Singleton

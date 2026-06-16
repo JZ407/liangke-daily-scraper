@@ -43,6 +43,8 @@ categories:
       scope: any
     - pattern: "Nature|PRL|Physical Review|Phys\\. Rev\\.|Nat\\."
       scope: any
+    - pattern: "(大学|学院|实验室|课题组|研究所|研究院|中科院|中国科学院|中科大|浙大|北大|清华|复旦).{0,40}(研究|发现|观测|证实|揭示|制备|合成|实现|取得|发表)"
+      scope: title
     positives:
       量子纠错: 5
       量子密钥分发: 5

@@ -283,6 +283,7 @@ def _llm_classify_batch(articles_info):
 - 发布渠道优先：arXiv/Nature/Science等学术渠道→科技前沿；PR/公司新闻室→产品动态
 - 常规声明不转移：论文末尾的"有望应用于量子计算"等不改变科技前沿属性
 - 合作区分：签合作协议/MoU（无成果产出）→企业资讯；合作发表论文/研发成功→科技前沿
+- 高校/研究所科研：XX大学/XX实验室发布研究成果（新物理效应/新材料/新算法/新实验）→科技前沿，无论发布渠道是否为量科网。大学名称不是企业资讯的标志
 
 ==== 速查对照 ====
 企业获融资（A/B/C轮） → 资本运作 | 企业IPO/SPAC/借壳上市 → 资本运作 | 企业发新芯片（含型号） → 产品动态
@@ -290,6 +291,7 @@ def _llm_classify_batch(articles_info):
 Nature论文 → 科技前沿 | 国家量子五年规划 → 宏观态势 | 企业获融资用于商业化 → 仍是资本运作
 arXiv论文 → 科技前沿 | 企业回应辟谣 → 企业资讯 | 公司产品路线图（含时间/指标） → 产品动态
 公司被收购/并购 → 资本运作 | 企业财报/估值 → 资本运作 | 公司大学联合发表论文 → 科技前沿
+大学发表研究成果（新物理效应/材料/算法）→ 科技前沿 | 大学获政府资助做科研 → 宏观态势
 
 ==== 常见错分陷阱（务必避免）====
 ❌ "XX完成A轮融资，加速产品商业化" → 错分为产品动态 | ✅ 应为资本运作（融资是核心事件）
@@ -1240,6 +1242,16 @@ def main():
                 final_tags['weekly'] = [all_cats[idx]]
             else:
                 final_tags = {'weekly': [all_cats[idx]], 'search_tags': [], 'knowledge_graph': {}}
+
+        # ── Funding tagger (project: 投融资看板) ──
+        if final_tags.get("weekly", [""])[0] == "资本运作":
+            try:
+                from funding_tagger import tag_funding, merge_funding_tags
+                funding_data = tag_funding(p["detail"]["title"], p["detail"]["content"] or "")
+                if funding_data:
+                    final_tags = merge_funding_tags(final_tags, funding_data)
+            except Exception:
+                pass
 
         try:
             result = insert_or_update_article(
