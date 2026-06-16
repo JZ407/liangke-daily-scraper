@@ -49,6 +49,63 @@ QUANTUM_COMPANIES = {
     '量羲技术': ['量羲技术'],
 }
 
+# ── International Quantum Companies ─────────────────────────────────
+
+INTERNATIONAL_QUANTUM_COMPANIES = {
+    # 超导量子计算
+    'IBM Quantum': ['IBM Quantum', 'IBM'],
+    'Rigetti': ['Rigetti', 'Rigetti Computing'],
+    'OQC': ['OQC', 'Oxford Quantum Circuits'],
+    'Nord Quantique': ['Nord Quantique'],
+    # 离子阱量子计算
+    'Quantinuum': ['Quantinuum'],
+    'IonQ': ['IonQ'],
+    'Oxford Ionics': ['Oxford Ionics'],
+    # 中性原子量子计算
+    'Pasqal': ['Pasqal', 'PASQAL'],
+    'QuEra': ['QuEra', 'QuEra Computing'],
+    'Atom Computing': ['Atom Computing'],
+    'Infleqtion': ['Infleqtion', 'ColdQuanta'],
+    # 光量子计算
+    'PsiQuantum': ['PsiQuantum', 'Psi Quantum'],
+    'Xanadu': ['Xanadu'],
+    'Quandela': ['Quandela'],
+    # 硅自旋量子计算
+    'Diraq': ['Diraq'],
+    'Silicon Quantum Computing': ['Silicon Quantum Computing', 'SQC'],
+    'Quobly': ['Quobly'],
+    # 拓扑量子计算
+    'Microsoft Quantum': ['Microsoft Quantum', 'Microsoft Azure Quantum', 'Azure Quantum'],
+    # 量子退火
+    'D-Wave': ['D-Wave', 'D-Wave Systems', 'DWave'],
+    # 量子软件 / 算法
+    'Algorithmiq': ['Algorithmiq'],
+    'Classiq': ['Classiq', 'Classiq Technologies'],
+    'Q-CTRL': ['Q-CTRL', 'Q Ctrl'],
+    'QunaSys': ['QunaSys'],
+    'Horizon Quantum': ['Horizon Quantum', 'Horizon Quantum Computing'],
+    'Quanscient': ['Quanscient'],
+    'Quantum Machines': ['Quantum Machines'],
+    # 量子传感 / 测量
+    'SBQuantum': ['SBQuantum'],
+    'Qnami': ['Qnami'],
+    'QuantX Labs': ['QuantX Labs'],
+    # 量子通信 / 安全
+    'Quantum Bridge': ['Quantum Bridge'],
+    'Pramatra Space': ['Pramatra Space'],
+    'ID Quantique': ['ID Quantique', 'IDQ'],
+    # 上游供应链
+    'QuantWare': ['QuantWare'],
+    'Alice & Bob': ['Alice & Bob', 'Alice and Bob'],
+    # 其他
+    'Universal Quantum': ['Universal Quantum'],
+    'Quantum Motion': ['Quantum Motion'],
+    'SEEQC': ['SEEQC'],
+    'DQC': ['DQC', 'Delft Quantum Computing'],
+    'Origin Quantum': ['Origin Quantum', '本源量子', '本源量子计算'],
+    'QuantumCTek': ['QuantumCTek', '国盾量子', '科大国盾'],
+}
+
 # ── Investment Institutions (投资机构) ──────────────────────────────
 
 INVESTORS = {
@@ -152,9 +209,55 @@ INVESTORS = {
     '指数资本': ['指数资本'],
     '云岫资本': ['云岫资本'],
 
-    # 国际量子投资者（在国内新闻中可能出现）
-    'Quantinuum': ['Quantinuum'],
-    'IonQ': ['IonQ'],
+    # ── 国际 VC / PE ──
+    'United Ventures': ['United Ventures'],
+    'Inventure VC': ['Inventure VC', 'Inventure'],
+    'CDP Venture Capital': ['CDP Venture Capital', 'CDP', 'Cassa Depositi e Prestiti'],
+    'DCVC': ['DCVC'],
+    'Bessemer Venture Partners': ['Bessemer Venture Partners', 'Bessemer'],
+    'Lightspeed Venture Partners': ['Lightspeed Venture Partners', 'Lightspeed'],
+    'Andreessen Horowitz': ['Andreessen Horowitz', 'a16z'],
+    'Sequoia Capital': ['Sequoia Capital', 'Sequoia'],
+    'SoftBank Vision Fund': ['SoftBank Vision Fund', 'SoftBank', '软银'],
+    'Temasek': ['Temasek', '淡马锡'],
+    'In-Q-Tel': ['In-Q-Tel', 'IQT'],
+    'Prelude Ventures': ['Prelude Ventures'],
+    'Founders Fund': ['Founders Fund'],
+    'Playground Global': ['Playground Global'],
+    'Eclipse Ventures': ['Eclipse Ventures'],
+    'Octopus Ventures': ['Octopus Ventures'],
+    'Amadeus Capital': ['Amadeus Capital', 'Amadeus Capital Partners'],
+    'M Ventures': ['M Ventures'],
+    'Capricorn Partners': ['Capricorn Partners'],
+    'Vsquared Ventures': ['Vsquared Ventures'],
+    'Quantonation': ['Quantonation'],
+    '2M Ventures': ['2M Ventures'],
+    'LIFTT': ['LIFTT'],
+    'Voima Ventures': ['Voima Ventures'],
+    'Maki.vc': ['Maki.vc', 'Maki VC'],
+
+    # ── 国际产业资本 ──
+    'NVIDIA': ['NVIDIA', 'Nvidia', '英伟达'],
+    'Google': ['Google', '谷歌'],
+    'Samsung Ventures': ['Samsung Ventures', '三星'],
+    'Sony Innovation Fund': ['Sony Innovation Fund', '索尼'],
+    'Bosch Ventures': ['Bosch Ventures', '博世'],
+    'Siemens': ['Siemens', '西门子'],
+    'BMW i Ventures': ['BMW i Ventures', '宝马'],
+    'Applied Ventures': ['Applied Ventures'],
+    'Lam Research': ['Lam Research'],
+    'Cerberus Capital': ['Cerberus Capital', 'Cerberus'],
+
+    # ── 国际政府/公共基金 ──
+    'European Innovation Council': ['European Innovation Council', 'EIC', 'EIC Accelerator'],
+    'Innovate UK': ['Innovate UK'],
+    'Wellcome Leap': ['Wellcome Leap'],
+    'DARPA': ['DARPA'],
+    'NIST': ['NIST'],
+    'BDC Capital': ['BDC Capital', 'BDC'],
+    'Business Finland': ['Business Finland'],
+    'VTT': ['VTT', 'VTT Technical Research'],
+    'NRFC': ['NRFC', 'National Reconstruction Fund'],
 }
 
 # ── Round Classification ─────────────────────────────────────────────
@@ -173,6 +276,7 @@ ROUND_PATTERNS = [
     # Fund — only when article is about fund establishment, not fund-as-investor
     (r'基金设立|设立.*基金|基金成立|基金落地|基金.*启航|基金.*发布|参设.*基金|出资.*基金|设立.*产业基金', '基金'),
     # Rounds (Pre-A before A to avoid false matches)
+    (r'E\+{0,2}轮', 'E轮'),
     (r'D\+{0,2}轮', 'D轮'),
     (r'C\+{0,2}轮', 'C轮'),
     (r'B\+{0,2}轮', 'B轮'),
@@ -216,7 +320,7 @@ USD_RATE = 7.2
 def build_alias_map():
     """Build flat alias→canonical map from QUANTUM_COMPANIES + INVESTORS."""
     alias_map = {}
-    for canonical, aliases in {**QUANTUM_COMPANIES, **INVESTORS}.items():
+    for canonical, aliases in {**QUANTUM_COMPANIES, **INTERNATIONAL_QUANTUM_COMPANIES, **INVESTORS}.items():
         for alias in aliases:
             alias_map[alias.lower()] = canonical
     return alias_map

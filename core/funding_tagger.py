@@ -12,8 +12,8 @@ Usage:
 
 import re
 from funding_dict import (
-    QUANTUM_COMPANIES, INVESTORS, ROUND_PATTERNS,
-    AMOUNT_PATTERNS_NUMERIC, AMOUNT_PATTERNS_VAGUE, USD_RATE,
+    QUANTUM_COMPANIES, INTERNATIONAL_QUANTUM_COMPANIES, INVESTORS,
+    ROUND_PATTERNS, AMOUNT_PATTERNS_NUMERIC, AMOUNT_PATTERNS_VAGUE, USD_RATE,
     normalize_entity,
 )
 
@@ -41,15 +41,15 @@ def extract_company(title, content=''):
     """Extract funded company from title (title-only for precision)."""
     text = title  # Company name is reliably in the title; content adds noise
 
-    # 1. Match against QUANTUM_COMPANIES dictionary (longest alias first)
+    # 1. Match against all company dictionaries (longest alias first)
+    all_companies = {**QUANTUM_COMPANIES, **INTERNATIONAL_QUANTUM_COMPANIES}
     matches = []
-    for canonical, aliases in QUANTUM_COMPANIES.items():
+    for canonical, aliases in all_companies.items():
         for alias in sorted(aliases, key=len, reverse=True):
             if alias.lower() in text.lower():
                 matches.append((len(alias), canonical, alias))
-                break  # one match per canonical
+                break
     if matches:
-        # Pick the longest matching alias (most specific)
         matches.sort(key=lambda x: x[0], reverse=True)
         return matches[0][1]
 
@@ -87,8 +87,9 @@ def extract_investors(title, content=''):
                 investors.add(canonical)
                 break
 
-    # Also check if any QUANTUM_COMPANIES acted as strategic investor
-    for canonical in QUANTUM_COMPANIES:
+    # Also check if any quantum company acted as strategic investor
+    all_companies = {**QUANTUM_COMPANIES, **INTERNATIONAL_QUANTUM_COMPANIES}
+    for canonical in all_companies:
         if canonical in text:
             # Only add if it appears in an investor context (after 领投/跟投/参投 etc.)
             ctx_patterns = [
@@ -132,9 +133,16 @@ def extract_amount(title, content=''):
         m = re.search(pat, text)
         if m:
             val = float(m.group(1)) * scale
-            # Check if it's USD (convert to CNY)
-            if '美元' in text[max(0, m.start()-10):m.end()+5]:
+            ctx = text[max(0, m.start()-10):m.end()+5]
+            # Convert foreign currency to CNY
+            if '美元' in ctx:
                 val *= USD_RATE
+            elif '欧元' in ctx:
+                val *= 7.8  # EUR to CNY
+            elif '英镑' in ctx:
+                val *= 9.1  # GBP to CNY
+            elif '加元' in ctx:
+                val *= 5.3  # CAD to CNY
             return int(val)
 
     # 2. Try vague patterns
