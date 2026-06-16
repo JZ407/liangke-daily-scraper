@@ -16,15 +16,16 @@ def run(output_path=None):
         print("No articles found in database.")
         return
 
-    max_tags = max(len(a.tags or []) for a in articles)
+    max_tags = max((len(a.tags) if isinstance(a.tags, list) else 0) for a in articles)
 
     wb = Workbook()
     ws = wb.active
     ws.title = '量科网新闻'
 
     base_headers = ['ID', '标题', '量科网链接', '参考链接', '原始日期', '量科网日期', '来源域名', '正文', '抓取次数']
-    tag_headers = [f'标签{i+1}' for i in range(max_tags)]
-    headers = base_headers + tag_headers
+    # Flatten tags dict into columns
+    tag_key_headers = ['周报标签', '检索标签', '投融资-轮次', '投融资-企业', '投融资-金额', '投融资-投资方', 'KG-机构', 'KG-技术']
+    headers = base_headers + tag_key_headers + [f'标签{i+1}' for i in range(max_tags)]
     ws.append(headers)
 
     header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
@@ -47,9 +48,65 @@ def run(output_path=None):
             a.content or '',
             a.fetch_count,
         ]
-        tags = a.tags or []
-        row.extend(tags)
-        row.extend([''] * (max_tags - len(tags)))
+        tags = a.tags or {}
+        if isinstance(tags, list):
+            # Old format: list of strings
+            flat_tags = tags
+            weekly_str = ''
+            search_str = ''
+            fund_round = ''
+            fund_company = ''
+            fund_amount = ''
+            fund_investors = ''
+            kg_inst = ''
+            kg_tech = ''
+        elif isinstance(tags, dict):
+            # New format: dict with namespaces
+            flat_tags = []
+            weekly_str = '、'.join(tags.get('weekly', []))
+            search_str = '、'.join(tags.get('search_tags', []))
+            # Funding
+            funding = tags.get('funding', {})
+            if isinstance(funding, dict):
+                fund_round = funding.get('round', '') or ''
+                fund_company = funding.get('company', '') or ''
+                fund_amount = funding.get('amount_text', '') or ''
+                fund_investors = '、'.join(funding.get('investors', []))
+            else:
+                fund_round = fund_company = fund_amount = fund_investors = ''
+            # Knowledge Graph
+            kg = tags.get('knowledge_graph', {})
+            if isinstance(kg, dict):
+                kg_inst = '、'.join(kg.get('institutions', []) or [])
+                kg_tech = '、'.join(kg.get('technologies', []) or [])
+            else:
+                kg_inst = kg_tech = ''
+        else:
+            flat_tags = []
+            weekly_str = search_str = fund_round = fund_company = fund_amount = fund_investors = kg_inst = kg_tech = ''
+
+        row = [
+            a.id,
+            a.title,
+            a.liangke_url,
+            ref_url,
+            a.original_date.strftime('%Y-%m-%d') if a.original_date else '',
+            a.liangke_date.strftime('%Y-%m-%d') if a.liangke_date else '',
+            a.source_domain or '',
+            a.content or '',
+            a.fetch_count,
+            weekly_str,
+            search_str,
+            fund_round,
+            fund_company,
+            fund_amount,
+            fund_investors,
+            kg_inst,
+            kg_tech,
+        ]
+        row.extend(flat_tags)
+        tag_count = len(tags) if isinstance(tags, list) else 0
+        row.extend([''] * (max_tags - tag_count))
         ws.append(row)
 
     ws.column_dimensions['A'].width = 6
@@ -61,8 +118,18 @@ def run(output_path=None):
     ws.column_dimensions['G'].width = 20
     ws.column_dimensions['H'].width = 60
     ws.column_dimensions['I'].width = 10
+    # Tag key columns (J-Q)
+    key_col_widths = [10, 18, 10, 12, 12, 25, 18, 18]
+    for i, w in enumerate(key_col_widths):
+        col = chr(ord('J') + i)
+        ws.column_dimensions[col].width = w
+    # Legacy flat tag columns
     for i in range(max_tags):
-        col = chr(ord('J') + i) if i < 17 else chr(ord('A') + (i - 17) // 26) + chr(ord('A') + (i - 17) % 26)
+        col_idx = 9 + len(tag_key_headers) + i  # J=9, plus key cols
+        if col_idx < 26:
+            col = chr(ord('A') + col_idx)
+        else:
+            col = chr(ord('A') + (col_idx // 26) - 1) + chr(ord('A') + (col_idx % 26))
         ws.column_dimensions[col].width = 15
 
     ws.freeze_panes = 'A2'
