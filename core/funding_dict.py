@@ -209,6 +209,9 @@ INVESTORS = {
     '指数资本': ['指数资本'],
     '云岫资本': ['云岫资本'],
 
+    # ── 国际量子公司（作战略投资方时）── 已移至 INTERNATIONAL_QUANTUM_COMPANIES
+    # Quantinuum/IonQ 等默认作为被投企业，仅在领投/跟投语境中识别为投资方
+
     # ── 国际 VC / PE ──
     'United Ventures': ['United Ventures'],
     'Inventure VC': ['Inventure VC', 'Inventure'],

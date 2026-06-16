@@ -24,7 +24,7 @@ def run(output_path=None):
 
     base_headers = ['ID', '标题', '量科网链接', '参考链接', '原始日期', '量科网日期', '来源域名', '正文', '抓取次数']
     # Flatten tags dict into columns
-    tag_key_headers = ['周报标签', '检索标签', '投融资-轮次', '投融资-企业', '投融资-金额', '投融资-投资方', 'KG-机构', 'KG-技术']
+    tag_key_headers = ['周报标签', '检索标签', '投融资标签', '图谱-机构', '图谱-技术']
     headers = base_headers + tag_key_headers + [f'标签{i+1}' for i in range(max_tags)]
     ws.append(headers)
 
@@ -54,10 +54,7 @@ def run(output_path=None):
             flat_tags = tags
             weekly_str = ''
             search_str = ''
-            fund_round = ''
-            fund_company = ''
-            fund_amount = ''
-            fund_investors = ''
+            fund_str = ''
             kg_inst = ''
             kg_tech = ''
         elif isinstance(tags, dict):
@@ -65,15 +62,18 @@ def run(output_path=None):
             flat_tags = []
             weekly_str = '、'.join(tags.get('weekly', []))
             search_str = '、'.join(tags.get('search_tags', []))
-            # Funding
+            # Funding — single summary column
             funding = tags.get('funding', {})
-            if isinstance(funding, dict):
-                fund_round = funding.get('round', '') or ''
-                fund_company = funding.get('company', '') or ''
-                fund_amount = funding.get('amount_text', '') or ''
-                fund_investors = '、'.join(funding.get('investors', []))
+            if isinstance(funding, dict) and funding.get('is_funding'):
+                parts = []
+                if funding.get('round'): parts.append(funding['round'])
+                if funding.get('company'): parts.append(funding['company'])
+                if funding.get('amount_text'): parts.append(funding['amount_text'])
+                invs = funding.get('investors', [])
+                if invs: parts.append('、'.join(invs[:5]))
+                fund_str = ' | '.join(parts)
             else:
-                fund_round = fund_company = fund_amount = fund_investors = ''
+                fund_str = ''
             # Knowledge Graph
             kg = tags.get('knowledge_graph', {})
             if isinstance(kg, dict):
@@ -83,7 +83,7 @@ def run(output_path=None):
                 kg_inst = kg_tech = ''
         else:
             flat_tags = []
-            weekly_str = search_str = fund_round = fund_company = fund_amount = fund_investors = kg_inst = kg_tech = ''
+            weekly_str = search_str = fund_str = kg_inst = kg_tech = ''
 
         row = [
             a.id,
@@ -97,10 +97,7 @@ def run(output_path=None):
             a.fetch_count,
             weekly_str,
             search_str,
-            fund_round,
-            fund_company,
-            fund_amount,
-            fund_investors,
+            fund_str,
             kg_inst,
             kg_tech,
         ]
@@ -119,7 +116,7 @@ def run(output_path=None):
     ws.column_dimensions['H'].width = 60
     ws.column_dimensions['I'].width = 10
     # Tag key columns (J-Q)
-    key_col_widths = [10, 18, 10, 12, 12, 25, 18, 18]
+    key_col_widths = [10, 18, 30, 18, 18]
     for i, w in enumerate(key_col_widths):
         col = chr(ord('J') + i)
         ws.column_dimensions[col].width = w
