@@ -24,6 +24,7 @@ FUNDING_SIGNALS = [
     '估值', '收购', '并购', '注资', '增资', '天使轮', 'A轮',
     'B轮', 'C轮', 'D轮', 'Pre-A', 'Pre-IPO', '战略融资',
     '种子轮', '基金设立', '产业基金', '创投基金',
+    '入股', '战略入股', '股权转让', '受让', '增资扩股',
     'funding', 'raises', 'raised', 'series', 'IPO',
     'acquires', 'acquisition', 'merger',
 ]
