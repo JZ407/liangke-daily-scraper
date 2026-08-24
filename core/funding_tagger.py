@@ -32,7 +32,15 @@ FUNDING_SIGNALS = [
 
 def is_funding_news(title, content=''):
     """Quick check if article is funding-related."""
-    text = (title + ' ' + (content or '')[:500]).lower()
+    # 负向信号(仅查标题):财报/业绩类文章不是投融资事件
+    # 2026-08-18 教训:Quantinuum/Rigetti/IonQ/Infleqtion 财报被误标,
+    # 净亏损金额被当作融资额(如 5.97亿美元亏损 → 42.98亿元)
+    title_l = (title or '').lower()
+    for neg in ['财报', '业绩', '季报', '年报', '中报', '营收', '亏损', '净利',
+                'earnings', 'quarter', 'financial results', 'reports q']:
+        if neg in title_l:
+            return False
+    text = title_l + ' ' + (content or '')[:500].lower()
     return any(s.lower() in text for s in FUNDING_SIGNALS)
 
 
