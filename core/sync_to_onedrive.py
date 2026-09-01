@@ -17,7 +17,7 @@ HISTORICAL_DB = 'D:/Claude_code/liangke_historical/historical_final.db'
 MYSQL_CONFIG = {
     'host': '127.0.0.1',
     'user': 'scraper',
-    'password': 'scraper123',
+    'password': os.environ.get('LIANGKE_MYSQL_PASSWORD', ''),
     'database': 'liangke_scraper',
     'charset': 'utf8mb4',
 }

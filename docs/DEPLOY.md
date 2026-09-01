@@ -77,7 +77,7 @@ python setup.py --db-only
 
 这会创建：
 - 数据库 `liangke_scraper`
-- 用户 `scraper` / 密码 `scraper123`
+- 用户 `scraper` / 密码见环境变量 `LIANGKE_MYSQL_PASSWORD`
 
 ### 5. 配置 Cookie
 
@@ -130,7 +130,7 @@ liangke_scraper/
 | 端口 | 3306 |
 | 数据库 | liangke_scraper |
 | 用户 | scraper |
-| 密码 | scraper123 |
+| 密码 | ${LIANGKE_MYSQL_PASSWORD} |
 
 可用任意 MySQL 客户端（如 DBeaver、Navicat、MySQL Workbench）连接查看数据。
 

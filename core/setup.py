@@ -116,7 +116,7 @@ def setup_db_only():
         conn = pymysql.connect(host='127.0.0.1', port=3306, user='root', password='')
         with conn.cursor() as cur:
             cur.execute("CREATE DATABASE IF NOT EXISTS liangke_scraper CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
-            cur.execute("CREATE USER IF NOT EXISTS 'scraper'@'localhost' IDENTIFIED BY 'scraper123';")
+            cur.execute(f"CREATE USER IF NOT EXISTS 'scraper'@'localhost' IDENTIFIED BY '{os.environ.get('LIANGKE_MYSQL_PASSWORD', '')}';")
             cur.execute("GRANT ALL PRIVILEGES ON liangke_scraper.* TO 'scraper'@'localhost';")
             cur.execute("FLUSH PRIVILEGES;")
             conn.commit()

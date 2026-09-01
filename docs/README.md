@@ -59,7 +59,7 @@ MySQL 数据目录位于 `C:\Users\zhouj\mysql_data`，端口 3306。
 | 端口 | 3306 |
 | 数据库 | liangke_scraper |
 | 用户 | scraper |
-| 密码 | scraper123 |
+| 密码 | ${LIANGKE_MYSQL_PASSWORD} |
 | root 密码 | root123 |
 
 ## 表结构

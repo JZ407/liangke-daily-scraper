@@ -13,7 +13,8 @@ from datetime import datetime
 
 Base = declarative_base()
 
-DB_URL = 'mysql+pymysql://scraper:scraper123@127.0.0.1:3306/liangke_scraper?charset=utf8mb4'
+DB_URL = (f'mysql+pymysql://scraper:{os.environ.get("LIANGKE_MYSQL_PASSWORD", "")}'
+          f'@127.0.0.1:3306/liangke_scraper?charset=utf8mb4')
 
 engine = create_engine(DB_URL, pool_pre_ping=True, echo=False)
 Session = sessionmaker(bind=engine)
